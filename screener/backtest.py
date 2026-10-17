@@ -21,7 +21,7 @@ from . import config, prices, score, screen, universe
 COST_BPS = 10  # one-way, per unit of turnover
 TOP_N = 25
 IC_COLS = ["implied_return", "cash_yield", "growth_rate", "bargain", "value", "profitability",
-           "balance_sheet", "growth", "mom_12_1", "price_action"]
+           "balance_sheet", "growth", "mom_12_1", "price_action", "ins_buyers", "ins_net_pct"]
 XS_CACHE = config.DATA_DIR / "backtest_xs.pkl"
 
 
@@ -103,6 +103,9 @@ STRATEGIES = [
     "Implied return, P/S below sector median",
     "Bargain top 25",
     "Baseline: top 25 FCF yield",
+    "Implied return + insider tilt",
+    "Gated, insiders bought (6M)",
+    "Insider cluster buys (any investable)",
     "All gated names",
     "Equal-weight universe",
 ]
@@ -131,6 +134,8 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
     fwd = (a.shift(-1) / a - 1).iloc[:-1]
     dates = list(fwd.index)
 
+    from . import insider
+    trades = insider.build()
     books = {k: {} for k in STRATEGIES + [f"Q{i}" for i in range(1, 6)]}
     ic_rows, counts = [], []
     for d in dates:
@@ -139,6 +144,7 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
         x = x.join(prices.performance(px, d))
         x["sector"] = uni["sector"].reindex(x.index).fillna(x["sector"])  # current overrides
         x["us_hq"] = uni["us_hq"].reindex(x.index).fillna(False)
+        x = insider.add(x, trades, uni["cik"], d)
         s = score.score(x, weights, rank_by="implied_return")
         inv = s[s["investable"] & ~s["is_financial"].astype(bool)]
         ok = inv[inv["passes"]]
@@ -159,6 +165,10 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
             score.top_n(ok_sec, "implied_return", TOP_N).index)
         books["Bargain top 25"][d] = _ew(score.top_n(ok, "bargain", TOP_N).index)
         books["Baseline: top 25 FCF yield"][d] = _ew(inv.nlargest(TOP_N, "fcf_yield").index)
+        tilted = ok.assign(tilted=ok["implied_return"] + score.insider_bonus(ok))
+        books["Implied return + insider tilt"][d] = _ew(score.top_n(tilted, "tilted", TOP_N).index)
+        books["Gated, insiders bought (6M)"][d] = _ew(ok[ok["ins_buyers"] >= 1].index)
+        books["Insider cluster buys (any investable)"][d] = _ew(inv[inv["ins_buyers"] >= 2].index)
         books["All gated names"][d] = _ew(ok.index)
         books["Equal-weight universe"][d] = _ew(inv.index)
         q = pd.qcut(inv["implied_return"].rank(method="first"), 5, labels=False) + 1

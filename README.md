@@ -26,6 +26,7 @@ durable copy that survives sessions (`screener/store.py`):
 | `db/hq/*.txt` | HQ state/country per CIK (US-only gate) |
 | `db/prices/*.parquet` | daily Close, Adj Close, Volume, Stock Splits (dates x tickers) |
 | `db/universe.csv` | index membership, sector, CIK, exchange, HQ |
+| `db/trades.parquet` | insider open-market trades from SEC Form 4, since 2016 |
 | `db/screener.sqlite` | `screens`: every screen run, timestamped (forward track record); `history`: point-in-time monthly cross-sections behind the backtest |
 
 `fetch`, `screen` and `backtest` push to `db/` when they finish; `fetch` pulls from it when the local
@@ -39,7 +40,7 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
    positive; net margin at least 5% (financials skip it: bank revenue tags are unreliable); revenue per share up
    on TTM and 3-year; ROIC at least 10% (ROE for financials); margins not down more than 2pp;
    debt not up more than 25% of assets; net debt/EBITDA under 1.0; Piotroski at least 6; not a
-   mortgage REIT. Financials skip FCF and leverage gates and are ranked on their own list.
+   mortgage REIT; no restatement (8-K item 4.02) or bankruptcy (1.03) filed in the last year. Financials skip FCF and leverage gates and are ranked on their own list.
 2. **Rank: implied return** = cash yield (mean of earnings yield and owner FCF yield, where FCF is
    after stock comp and counts for at most 2x earnings) + growth (the lower
    of TTM and 3-year revenue-per-share growth, clipped to 0 to 20%). It approximates an owner's
@@ -47,6 +48,11 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
 3. **Context columns** (not ranked): sector-percentile sub-scores (value, profitability, balance
    sheet, growth), the Bargain residual, and price action (1M, YTD, 1Y, off 52-week high).
    Flags: cyclical (earnings may be at peak), debt estimated, Yahoo-filled, lagged filing.
+   Insiders (`screener/insider.py`): open-market buys/sells by officers and directors in the last
+   6 months from SEC Form 4 quarterly data sets (since 2016), topped up live from recent Form 4 XML;
+   10b5-1 plan sales, grants and exercises ignored. 8-K events (`screener/events.py`): auditor change,
+   listing notice, impairment (amber), major agreement, acquisition/sale (grey). Recent headlines
+   (Google News RSS, filler filtered) for the top 25. None of these affect the rank.
 4. **Backtest**: month-end rebalance on S&P 400 + 600 names, fundamentals rebuilt from filings
    public on each date, equal weight, 10 bps one-way costs, overlapping 1/3/12-month holds, vs SPY,
    an FCF-yield baseline and the equal-weight universe. Universe is today's members, so results
@@ -61,10 +67,15 @@ Default = gates above + implied return top 25, **no P/S gate**, rebalanced month
 | P/S below sector median | 14.3% | 0.64 | -3.5%/yr |
 | + momentum gate / Bargain rank | 17.5% / 17.9% | 0.85 / 0.86 | ~0 |
 | Top 25 FCF yield (baseline) | 20.9% | 0.72 | max drawdown -60% |
+| + insider tilt (+4pp per insider buyer, max 2) | 22.2% | 1.02 | +4.4%/yr: same as default, within noise |
+| Gated names with insider buying only | 14.3% | 0.69 | -3.5%/yr |
+| Insider cluster buys, any investable | 18.7% | 0.80 | +0.9%/yr (12-month hold +3.8%, t 1.9) |
 | Equal-weight universe / SPY | 17.8% / 15.0% | 0.85 / 0.97 | |
 Caveats: excess return is not statistically significant (t ~1); edge fades with holding period
 (+5%/yr at 1 month, ~0 at 12 months); rank IC ~0.01, so most value comes from the gates;
-survivorship bias inflates all absolute numbers.
+survivorship bias inflates all absolute numbers. Insider buying (tested 2026-10-17) adds nothing
+reliable to this universe, so it is shown, not scored. Headline sentiment has no free history to
+test, so it is context only.
 
 Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps` (optional ceiling), `--ps-vs-sector`,
 `--min-net-margin`, `--max-nd-ebitda`, `--min-adv`, `--include-foreign`, `--top`.

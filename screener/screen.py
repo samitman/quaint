@@ -108,6 +108,17 @@ def run(as_of: pd.Timestamp | None = None, weights: dict | None = None) -> pd.Da
     df = cross_sections([d], uni, px, live=True)
     _fill_missing_shares(df)
     df = df.join(uni[["sec_name", "index", "exchange", "us_hq"]], on="ticker")
-    df = df.join(prices.performance(px, d), on="ticker")
-    df.to_pickle(LATEST)  # unscored, so `lookup` can add a ticker and re-score
-    return score.score(df.set_index("ticker"), weights).sort_values("composite", ascending=False)
+    df = df.join(prices.performance(px, d), on="ticker").set_index("ticker")
+    inv = score.score(df, weights).query("investable").index  # only these get per-company SEC calls
+    df = enrich(df, uni["cik"], d, list(inv))
+    df.reset_index().to_pickle(LATEST)  # unscored, so `lookup` can add a ticker and re-score
+    return score.score(df, weights).sort_values("composite", ascending=False)
+
+
+def enrich(df: pd.DataFrame, ciks: pd.Series, d, tickers: list) -> pd.DataFrame:
+    """Insider buying/selling (Form 4) and 8-K events. df is indexed by ticker."""
+    from . import events, insider
+    trades = insider.update()
+    trades = insider.recent(trades, {t: ciks[t] for t in tickers if t in ciks and pd.notna(ciks[t])})
+    df = insider.add(df, trades, ciks, d)
+    return events.add(df, ciks, d, tickers=[t for t in tickers if t in df.index])

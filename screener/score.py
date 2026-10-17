@@ -14,6 +14,7 @@ MIN_MCAP = 300e6
 MAX_MCAP = 5e9
 MIN_PRICE = 5.0
 MIN_ADV = 2e6           # median daily dollar volume; easy to trade at personal size
+INSIDER_TILT = 0.04     # implied-return bonus per distinct insider buyer (max 2) in the last 6 months
 FCF_CAP = 2.0           # in cash yield, FCF yield is capped at 2x earnings yield
 MAX_PS = None          # optional P/S ceiling; off by default (backtest 2026-10: ceiling cost ~2%/yr)            # hard ceiling on price / sales
 PS_VS_SECTOR = False    # optionally also below the median P/S of investable sector peers
@@ -44,6 +45,8 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     f["fcf_positive"] = fin | (df["fcf"] > 0)
     f["low_leverage"] = fin | (df["nd_ebitda"] < MAX_ND_EBITDA)
     f["fscore"] = df["fscore"] >= MIN_FSCORE
+    if "red_flags" in df:  # restatement or bankruptcy filing in the last year (8-K)
+        f["no_red_flags"] = df["red_flags"].fillna("") == ""
     # A ceiling only: implied return already ranks cheapness, and a sector-median rule drops
     # high-margin names in mixed sectors (GNTX vs retailers). Bank "revenue" is too loosely
     # tagged for P/S or net margin to mean anything, so financials skip both.
@@ -225,3 +228,10 @@ def top_n(df: pd.DataFrame, col: str, n: int, per_sector: int = MAX_PER_SECTOR) 
     ranked = ranked[ranked[col].notna()]
     keep = ranked.groupby("sector").cumcount() < per_sector
     return ranked[keep].head(n)
+
+
+def insider_bonus(df: pd.DataFrame) -> pd.Series:
+    """Officers/directors buying on the open market: up to 2 buyers count, INSIDER_TILT each."""
+    if "ins_buyers" not in df:
+        return pd.Series(0.0, index=df.index)
+    return INSIDER_TILT * df["ins_buyers"].fillna(0).clip(upper=2)

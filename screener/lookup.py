@@ -78,7 +78,17 @@ def lookup(ticker: str, weights: dict | None = None) -> str:
     latest = pd.read_pickle(screen.LATEST)
     in_uni = ticker in set(latest["ticker"])
     xs = latest if in_uni else pd.concat([latest, _external_row(ticker, latest)], ignore_index=True)
-    s = score.score(xs.set_index("ticker"), weights)
+    xs = xs.set_index("ticker")
+    if not in_uni or pd.isna(xs.at[ticker, "ins_buyers"] if "ins_buyers" in xs else None):
+        ciks = universe.load().set_index("ticker")["cik"]
+        if ticker not in ciks:
+            sec = universe.sec_ticker_map().drop_duplicates("ticker").set_index("ticker")["cik"]
+            ciks = pd.concat([ciks, sec[[ticker]]]) if ticker in sec else ciks
+        one = screen.enrich(xs.loc[[ticker]], ciks, xs.at[ticker, "date"], [ticker])
+        for c in one.columns.difference(xs.columns):
+            xs[c] = None
+        xs.loc[ticker, one.columns] = one.loc[ticker]
+    s = score.score(xs, weights)
     r = s.loc[ticker]
     passed = s[s["passes"]].sort_values("composite", ascending=False)
     peers = s[s["investable"] & (s["sector"] == r["sector"])]
@@ -121,6 +131,16 @@ def lookup(ticker: str, weights: dict | None = None) -> str:
         flags.append(f"share count source: {r.get('shares_source')}")
     if flags:
         lines += ["", "Data flags: " + "; ".join(flags)]
+    from . import events, insider
+    lines += ["", "Insiders (officers/directors, open market, last 6 months): "
+              + (insider.summary(r) or "no buying or notable selling")]
+    ev = "; ".join(x for x in (f"RED FLAG: {r.get('red_flags')}" if r.get("red_flags") else "",
+                               f"warning: {r.get('warnings')}" if r.get("warnings") else "",
+                               f"recent: {r.get('events')}" if r.get("events") else "") if x)
+    lines.append("8-K events: " + (ev or "none notable"))
+    news = events.headlines(str(r.get("sec_name") or ticker), ticker)
+    if news:
+        lines += ["Headlines (30 days):"] + [f"  {h['date']:%b %d} {h['source']}: {h['title']}" for h in news]
     return "\n".join(lines)
 
 

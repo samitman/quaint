@@ -79,7 +79,10 @@ def cmd_screen(a):
     shown = (p[~p["is_financial"].astype(bool)].head(a.top).index.tolist()
              + p[p["is_financial"].astype(bool)].head(10).index.tolist())
     s = yahoo_fill.crosscheck(s, shown)
-    htm, csv = report.write(s, Path(a.out), top=a.top)
+    from . import events, score
+    core = p[~p["is_financial"].astype(bool)]
+    news = {t: events.headlines(str(s.at[t, "sec_name"]), t) for t in score.top_n(core, "composite", a.top).index}
+    htm, csv = report.write(s, Path(a.out), top=a.top, news=news)
     from . import store
     store.save_screen(s, report.CSV_COLS)
     store.push()

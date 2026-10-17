@@ -6,6 +6,7 @@ Working caches stay on fast local disk (SCREENER_DATA); this module mirrors them
   db/prices/*.parquet     daily Close / Adj Close / Volume / Stock Splits (dates x tickers)
   db/universe.csv         index membership, sector, CIK
   db/screener.sqlite      every screen run (table `screens`) + backtest history (`history`)
+  db/trades.parquet       insider open-market trades (Form 4) since 2016
 
 `pull()` seeds an empty local cache from db/ (minutes instead of a full re-download);
 `push()` copies anything newer back. SQLite is written locally and copied, because
@@ -23,6 +24,7 @@ from . import config
 
 DB = config.ROOT / "db"
 LOCAL_SQLITE = config.DATA_DIR / "screener.sqlite"
+INSIDER = config.CACHE_DIR / "insider" / "trades.parquet"  # Form 4 open-market trades since 2016
 _DIRS = {"edgar": config.EDGAR_CACHE, "hq": config.CACHE_DIR / "hq"}
 
 
@@ -51,7 +53,7 @@ def push() -> None:
             pq.parent.mkdir(parents=True, exist_ok=True)
             pd.read_csv(csv, index_col=0, parse_dates=True).to_parquet(pq)
             n += 1
-    for f in (config.UNIVERSE_FILE, LOCAL_SQLITE):
+    for f in (config.UNIVERSE_FILE, LOCAL_SQLITE, INSIDER):
         if f.exists():
             n += _copy_if_newer(f, DB / f.name)
     print(f"[store] pushed {n} files to {DB}")
@@ -65,7 +67,8 @@ def pull() -> None:
             csv.parent.mkdir(parents=True, exist_ok=True)
             pd.read_parquet(pq).to_csv(csv)
             n += 1
-    for name, local in (("universe.csv", config.UNIVERSE_FILE), ("screener.sqlite", LOCAL_SQLITE)):
+    for name, local in (("universe.csv", config.UNIVERSE_FILE), ("screener.sqlite", LOCAL_SQLITE),
+                        ("trades.parquet", INSIDER)):
         if (DB / name).exists():
             n += _copy_if_newer(DB / name, local)
     print(f"[store] pulled {n} files from {DB}")

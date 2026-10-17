@@ -17,7 +17,8 @@ COLS = [  # (column, header, format)
     ("cash_yield", "= Cash yield", "%"), ("growth_rate", "+ Growth/sh", "%"), ("pe", "P/E", "x"),
     ("ps", "P/S", "x"), ("net_margin", "Net mgn", "%"),
     ("return_on_capital", "ROIC/ROE", "%"), ("net_debt", "Net debt", "nd"),
-    ("nd_ebitda", "ND/EBITDA", "x"), ("ret_1y", "1Y", "%±"), ("off_high", "vs 52w hi", "%"), ("why", "Why it's here", "s"),
+    ("nd_ebitda", "ND/EBITDA", "x"), ("ret_1y", "1Y", "%±"), ("off_high", "vs 52w hi", "%"),
+    ("ins_net_usd", "Insiders 6M", "ins"), ("why", "Why it's here", "s"),
     ("flags", "Flags", "s"),
 ]
 CSV_COLS = ["rank", "ticker", "sec_name", "sector", "industry", "exchange", "price", "mcap",
@@ -27,6 +28,8 @@ CSV_COLS = ["rank", "ticker", "sec_name", "sector", "industry", "exchange", "pri
             "fcf_conversion", "rev_growth", "rev_cagr_3y", "rev_ps_growth", "rev_ps_cagr_3y",
             "ni_growth", "margin_change", "nd_ebitda", "debt_equity", "total_debt", "debt_prev",
             "debt_yoy", "cash", "net_debt", "ev", "fscore", "ret_1m", "ret_ytd", "ret_1y", "off_high",
+            "ins_buyers", "ins_buy_usd", "ins_sell_usd", "ins_net_usd", "ins_net_pct", "red_flags",
+            "warnings", "events",
             "value", "profitability", "balance_sheet", "growth", "price_action", "bargain", "blend",
             "passes", "failed", "why", "flags", "cyclical", "period_end", "data_age_days",
             "shares", "shares_source", "debt_stale", "yahoo_fields", "adv_usd", "index"]
@@ -81,6 +84,12 @@ def why(r) -> str:
 
 def _flags(r) -> str:
     out = []
+    if r.get("red_flags"):
+        out.append(f"RED FLAG: {r['red_flags']}")
+    if (r.get("ins_buyers") or 0) >= 2:
+        out.append("insider cluster buy")
+    for k in ("warnings", "events"):
+        out += [e for e in str(r.get(k) or "").split(", ") if e]
     if r.get("cyclical"):
         out.append("cyclical")
     if r.get("debt_estimated"):
@@ -100,12 +109,30 @@ def _flags(r) -> str:
             out.append(f"FCF {k:.1f}x earnings")
     if r.get("xcheck"):
         out.append(f"CHECK: {r['xcheck']}")
-    return ", ".join(out)
+    return "; ".join(out)
+
+
+def _ins_cell(r) -> str:
+    """Insider buying in green, notable net selling (over 0.5% of market cap) muted."""
+    b, net = r.get("ins_buyers"), r.get("ins_net_usd")
+    if _na(b):
+        return "<td>–</td>"
+    from .insider import _usd
+    heavy_sell = (r.get("ins_net_pct") or 0) < -0.005
+    sold = f"sold {_usd(r.get('ins_sell_usd'))}"
+    if b:
+        return (f'<td class=up data-v="{r.get("ins_buy_usd")}">{int(b)} bought {_usd(r.get("ins_buy_usd"))}'
+                f'{"<br><span class=s>" + sold + "</span>" if heavy_sell else ""}</td>')
+    if heavy_sell:
+        return f'<td class=s data-v="{net}">{sold}</td>'
+    return '<td data-v="0">–</td>'
 
 
 SECTOR_SHORT = {"Communication Services": "Comm. Services", "Consumer Discretionary": "Cons. Discretionary",
                 "Information Technology": "Info. Tech", "Consumer Staples": "Cons. Staples"}
-_WARN = ("FCF", "CHECK", "cyclical")  # flags worth a second look before buying
+_WARN = ("FCF", "CHECK", "cyclical", "auditor change", "listing notice", "impairment")  # look before buying
+_GOOD = ("insider cluster buy",)
+_BAD = ("RED FLAG",)
 
 
 _WORDS = {"INC", "CO", "LTD", "THE", "AND", "OF", "LLC", "NEW", "LP", "PLC", "DE"}
@@ -136,8 +163,10 @@ def _ir_cell(r, scale: float) -> str:
 def _flag_cell(v) -> str:
     if _na(v) or not v:
         return "<td class=f></td>"
-    pills = "".join(f'<span class="pill{" warn" if f.startswith(_WARN) else ""}">{html.escape(f)}</span>'
-                    for f in str(v).split(", "))
+    def kind(f):
+        return " bad" if f.startswith(_BAD) else " good" if f.startswith(_GOOD) else \
+            " warn" if f.startswith(_WARN) else ""
+    pills = "".join(f'<span class="pill{kind(f)}">{html.escape(f)}</span>' for f in str(v).split("; "))
     return f"<td class=f>{pills}</td>"
 
 
@@ -157,6 +186,9 @@ def _table(df: pd.DataFrame, tid: str, extra: str | None = None) -> str:
                 continue
             if c == "flags":
                 cells.append(_flag_cell(v))
+                continue
+            if c == "ins_net_usd":
+                cells.append(_ins_cell(r))
                 continue
             if c == "sec_name" and not _na(v):
                 v = _name(v)
@@ -179,11 +211,11 @@ def _table(df: pd.DataFrame, tid: str, extra: str | None = None) -> str:
 
 CSS = """
 :root{--bg:#fff;--fg:#1a1a1a;--mut:#5f5f5f;--line:#e2e2e0;--head:#eef1ef;--stripe:#f1f4f2;--hover:#e6f2ec;
---acc:#0b6e4f;--acc2:#8fcfb5;--up:#1a7f37;--dn:#b42318;--card:#f8f9f8;--warn:#8a5a00;--warnbg:#fdf0d5}
+--acc:#0b6e4f;--acc2:#8fcfb5;--up:#1a7f37;--dn:#b42318;--card:#f8f9f8;--warn:#8a5a00;--warnbg:#fdf0d5;--goodbg:#e3f3e8;--badbg:#fde4e1}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141414;--fg:#e8e8e8;--mut:#a3a3a3;
---line:#2c2c2c;--head:#1f2522;--stripe:#1d201f;--hover:#1f2e27;--acc:#4fc79a;--acc2:#1f6b51;--up:#5cc98a;--dn:#ff8a7a;--card:#1a1c1b;--warn:#f5c26b;--warnbg:#3a2e14}}
+--line:#2c2c2c;--head:#1f2522;--stripe:#1d201f;--hover:#1f2e27;--acc:#4fc79a;--acc2:#1f6b51;--up:#5cc98a;--dn:#ff8a7a;--card:#1a1c1b;--warn:#f5c26b;--warnbg:#3a2e14;--goodbg:#173322;--badbg:#3d1d1a}}
 :root[data-theme="dark"]{--bg:#141414;--fg:#e8e8e8;--mut:#a3a3a3;--line:#2c2c2c;--head:#1f2522;--stripe:#1d201f;
---hover:#1f2e27;--acc:#4fc79a;--acc2:#1f6b51;--up:#5cc98a;--dn:#ff8a7a;--card:#1a1c1b;--warn:#f5c26b;--warnbg:#3a2e14}
+--hover:#1f2e27;--acc:#4fc79a;--acc2:#1f6b51;--up:#5cc98a;--dn:#ff8a7a;--card:#1a1c1b;--warn:#f5c26b;--warnbg:#3a2e14;--goodbg:#173322;--badbg:#3d1d1a}
 body{background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,system-ui,Segoe UI,sans-serif;margin:24px 16px}
 h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 8px}p{color:var(--mut);max-width:1100px}
 .legend{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 16px;max-width:1100px;margin:12px 0}
@@ -211,6 +243,9 @@ td.f{text-align:left;white-space:normal;min-width:140px}
 .pill{display:inline-block;font-size:11px;padding:1px 7px;margin:1px 3px 1px 0;border-radius:10px;
 background:var(--line);color:var(--mut);white-space:nowrap}
 .pill.warn{background:var(--warnbg);color:var(--warn)}
+.pill.good{background:var(--goodbg);color:var(--up)}.pill.bad{background:var(--badbg);color:var(--dn);font-weight:600}
+.news{max-width:1100px}.news h3{font-size:13px;margin:14px 0 4px}.news ul{margin:0;padding-left:18px}
+.news li{margin:2px 0;color:var(--mut)}.news a{color:var(--fg)}.news .src{font-size:12px}
 @media (max-width:640px){.legend dl{grid-template-columns:1fr;gap:0 0}.legend dd{margin-bottom:8px}}
 .key{display:inline-flex;align-items:center;gap:6px;margin-right:14px}
 .key i{display:inline-block;width:14px;height:8px;border-radius:4px}
@@ -224,7 +259,24 @@ rows.forEach(r=>tb.appendChild(r))});
 """
 
 
-def write(scored: pd.DataFrame, out_dir: Path, top: int = 25, note: str = "") -> tuple[Path, Path]:
+def _news(news: dict, names: dict) -> str:
+    parts = []
+    for t, items in (news or {}).items():
+        if not items:
+            continue
+        lis = "".join(
+            f'<li><a href="{html.escape(h["link"])}" target=_blank rel=noopener>{html.escape(h["title"])}</a>'
+            f' <span class=src>· {html.escape(h["source"])}'
+            f'{", " + format(h["date"], "%b %d") if pd.notna(h["date"]) else ""}</span></li>' for h in items)
+        parts.append(f"<h3>{html.escape(t)} · {html.escape(_name(names.get(t, '')))}</h3><ul>{lis}</ul>")
+    if not parts:
+        return ""
+    return ('<h2>Recent headlines on the top picks (30 days)</h2><div class=news>' + "".join(parts)
+            + "<p>Context only; headlines don't affect the ranking.</p></div>")
+
+
+def write(scored: pd.DataFrame, out_dir: Path, top: int = 25, note: str = "",
+          news: dict | None = None) -> tuple[Path, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     d = pd.Timestamp(scored["date"].iloc[0]).date()
     s = scored.sort_values("composite", ascending=False).copy()
@@ -268,7 +320,12 @@ Financials use earnings yield only.</dd>
 <dt>Net debt</dt><dd>Total debt − cash. <span style="color:var(--up)">Net cash</span> means more cash than debt.</dd>
 <dt>ND/EBITDA</dt><dd>Net debt ÷ operating profit before depreciation: years of profit to pay off debt. Negative = net cash.</dd>
 <dt>1Y, vs 52w hi</dt><dd>Price change over 1 year, and distance below the 52-week high. Context only, not used in the ranking.</dd>
-<dt>Flags</dt><dd><span class="pill warn">amber</span> = check before buying. <i>cyclical</i>: earnings may be at a cycle peak. <i>FCF N× earnings</i>: cash flow and profit disagree;
+<dt>Insiders 6M</dt><dd>Open-market buys by officers and directors in the last 6 months (SEC Form 4), or net
+selling when it exceeds 0.5% of market cap. Grants, option exercises and pre-scheduled (10b5-1) sales are ignored.
+Context only: in our 2017–2026 backtest insider buying did not improve the picks.</dd>
+<dt>Flags</dt><dd><span class="pill good">green</span> = 2+ insiders bought. <span class="pill warn">amber</span> = check
+before buying (incl. auditor change or impairment filed in an 8-K). Grey chips note recent 8-K events (major agreement,
+acquisition/sale) and data caveats. A restatement or bankruptcy filing in the last year excludes a company. <i>cyclical</i>: earnings may be at a cycle peak. <i>FCF N× earnings</i>: cash flow and profit disagree;
 check why. <i>Yahoo-filled</i>, <i>debt from 10-K</i>, <i>lagged filing</i>: some data is older or from Yahoo.</dd>
 <dt>Gates</dt><dd>Every ranked company passes all of these: US headquarters; market cap ${score.MIN_MCAP / 1e9:g}B–${score.MAX_MCAP / 1e9:g}B;
 price over $5; median daily trading over ${score.MIN_ADV / 1e6:g}M; profitable; positive free cash flow;
@@ -278,6 +335,7 @@ revenue per share up over 1 and 3 years; ROIC ≥ {score.MIN_RETURN_ON_CAPITAL:.
 Financials skip the cash-flow, margin and debt tests.</dd>
 </dl></details>
 <h2>Top {min(top, len(core))} picks (max {score.MAX_PER_SECTOR} per sector)</h2>{_table(score.top_n(core, "composite", top), "top")}
+{_news(news, s["sec_name"].to_dict())}
 <h2>Financials: top {min(10, len(fins))} (banks, insurers, lenders)</h2>{_table(fins.head(10), "fin")}
 <h2>Near misses: high implied return, one gate failed</h2>{_table(near, "near", "Failed gate")}
 <h2>Definitely not bargains: lowest implied return</h2>{_table(dear, "dear")}
