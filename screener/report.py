@@ -8,20 +8,27 @@ import pandas as pd
 
 from . import score
 
-COLS = [  # (column, header, format)
-    ("sec_name", "Company", "s"), ("sector", "Sector", "s"), ("exchange", "Exch", "s"),
-    ("price", "Price", "$"), ("mcap", "Mkt cap", "B"), ("pe", "P/E", "x"), ("pb", "P/B", "x"),
-    ("ev_ebit", "EV/EBIT", "x"), ("fcf_yield", "FCF yld", "%"), ("roic", "ROIC", "%"),
-    ("roe", "ROE", "%"), ("op_margin", "Op mgn", "%"), ("rev_growth", "Rev g", "%"),
-    ("rev_cagr_3y", "Rev 3y", "%"), ("margin_change", "Mgn Δ", "pp"), ("nd_ebitda", "ND/EBITDA", "x"),
-    ("fscore", "F", "f"), ("value", "Value", "p"), ("quality", "Qual", "p"),
-    ("trajectory", "Traj", "p"), ("composite", "Score", "p"), ("flags", "Data flags", "s"),
+GROUPS = [  # (group header, [(column, header, format), ...])
+    ("", [("sec_name", "Company", "s"), ("sector", "Sector", "s"), ("price", "Price", "$"),
+          ("mcap", "Mkt cap", "B")]),
+    ("Valuation", [("pe", "P/E", "x"), ("pb", "P/B", "x"), ("fcf_yield", "FCF yld", "%")]),
+    ("Profitability", [("net_income", "Net inc", "B"), ("roic", "ROIC", "%"), ("op_margin", "Op mgn", "%")]),
+    ("Balance sheet", [("nd_ebitda", "ND/EBITDA", "x"), ("debt_yoy", "Debt y/y", "%")]),
+    ("Growth", [("rev_growth", "Rev y/y", "%"), ("margin_change", "Mgn Δ pp", "pp")]),
+    ("Price action", [("ret_1m", "1M", "%"), ("ret_ytd", "YTD", "%"), ("ret_1y", "1Y", "%"),
+                      ("off_high", "vs 52w hi", "%")]),
+    ("Scores (sector percentile)", [("value", "Val", "p"), ("profitability", "Prof", "p"),
+                                    ("balance_sheet", "BS", "p"), ("growth", "Grow", "p"),
+                                    ("price_action", "Price", "p"), ("bargain", "Bargain", "p")]),
+    ("", [("flags", "Data flags", "s")]),
 ]
+COLS = [c for _, cols in GROUPS for c in cols]
 CSV_COLS = ["rank", "ticker"] + [c for c, _, _ in COLS] + [
-    "passes", "failed", "net_income", "fcf", "ebit", "equity", "total_debt", "cash", "ev",
+    "blend", "ev_ebit", "roe", "rev_cagr_3y", "fscore", "debt_change", "debt_prev",
+    "passes", "failed", "fcf", "ebit", "equity", "total_debt", "cash", "ev",
     "earnings_yield", "ebit_ev", "book_yield", "gross_margin", "fcf_conversion", "ni_growth",
     "fscore_n", "period_end", "data_age_days", "shares", "shares_source", "debt_stale",
-    "adv_usd", "industry", "index"]
+    "adv_usd", "industry", "index", "yahoo_fields"]
 
 
 def _fmt(v, kind):
@@ -47,6 +54,8 @@ def _fmt(v, kind):
 
 
 def _table(df: pd.DataFrame, tid: str, extra: str | None = None) -> str:
+    top = "<th colspan=2></th>" + "".join(
+        f"<th colspan={len(cols)} class=g>{g}</th>" for g, cols in GROUPS) + ("<th></th>" if extra else "")
     heads = "".join(f"<th>{h}</th>" for h in ["#", "Ticker"] + [h for _, h, _ in COLS]
                     + ([extra] if extra else []))
     rows = []
@@ -59,7 +68,7 @@ def _table(df: pd.DataFrame, tid: str, extra: str | None = None) -> str:
         if extra:
             cells.append(f"<td class=s>{html.escape(str(r.get('failed', '')))}</td>")
         rows.append("<tr>" + "".join(cells) + "</tr>")
-    return f'<table id={tid}><thead><tr>{heads}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+    return f'<table id={tid}><thead><tr class=grp>{top}</tr><tr>{heads}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
 
 
 CSS = """
@@ -72,7 +81,8 @@ th,td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:right}
 th{background:var(--head);position:sticky;top:0;cursor:pointer;font-weight:600}
 td:nth-child(3),td:nth-child(4),td:nth-child(5),th:nth-child(3),th:nth-child(4){text-align:left}
 td.t{font-weight:700;color:var(--acc);text-align:left}td.s{text-align:left;color:var(--mut)}
-td:nth-last-child(2){font-weight:700}
+tr.grp th{position:static;font-weight:500;color:var(--mut);border-bottom:none;cursor:default}
+th.g{border-left:2px solid var(--line);text-align:center}
 """
 JS = """
 document.querySelectorAll('th').forEach((th,i)=>th.onclick=()=>{const tb=th.closest('table').tBodies[0];
@@ -91,7 +101,8 @@ def write(scored: pd.DataFrame, out_dir: Path, top: int = 50, note: str = "") ->
                                             ("debt from 10-K", r.get("debt_stale")),
                                             (f"shares: {r.get('shares_source')}",
                                              r.get("shares_source") not in ("cover", "diluted")),
-                                            ("Q1 data", (r.get("data_age_days") or 0) > 150)) if on)
+                                            (f"yahoo: {r.get('yahoo_fields')}", bool(r.get("yahoo_fields"))),
+                                            ("lagged data", (r.get("data_age_days") or 0) > 150)) if on)
                   for _, r in s.iterrows()]
     passed = s[s["passes"]]
     s["rank"] = None
@@ -100,21 +111,22 @@ def write(scored: pd.DataFrame, out_dir: Path, top: int = 50, note: str = "") ->
     s[[c for c in CSV_COLS if c in s.columns]].to_csv(csv, index_label="ticker_id")
 
     inv = s[s["investable"]]
-    near = inv[~inv["passes"] & (inv["failed"].str.count(",") == 0)].head(25)
+    near = inv[~inv["passes"] & (inv["failed"].str.count(",") == 0)
+               & (inv["failed"] != "business_model")].head(25)
     dear = inv.sort_values("value").head(20)
-    w = score.DEFAULT_WEIGHTS
     page = f"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>Bargain screen {d}</title>
 <style>{CSS}</style></head><body>
 <h1>Bargain screen · {d}</h1>
-<p>{len(inv)} investable names (S&amp;P 500/400 + Nasdaq-100, mcap &gt; $2B, price &gt; $5, ADV &gt; $10M);
-<b>{len(passed)}</b> pass every hard filter (profitable, FCF &gt; 0, net debt/EBITDA &lt; {score.MAX_ND_EBITDA},
-Piotroski ≥ {score.MIN_FSCORE:.0f}; financials exempt from FCF/leverage). Scores are percentiles vs. sector peers
-(100 = cheapest/best in sector). Composite = {w['value']:.0%} value + {w['quality']:.0%} quality +
-{w['trajectory']:.0%} trajectory. Click a header to sort. {html.escape(note)}</p>
+<p><b>Bargain</b> = how much cheaper a stock is than its profitability, balance sheet and growth
+would justify, vs. sector peers (100 = biggest bargain). Ranked list = names passing every hard filter
+({len(passed)} of {len(inv)} investable): profitable, FCF &gt; 0, net debt/EBITDA &lt; {score.MAX_ND_EBITDA},
+Piotroski ≥ {score.MIN_FSCORE:.0f}, mcap &gt; $2B, price &gt; $5, ADV &gt; $10M (financials exempt from FCF/leverage).
+Sub-scores are sector percentiles, 100 = best; Price 100 = most beaten down (context only, not ranked on).
+Returns include dividends. Click a header to sort. {html.escape(note)}</p>
 <h2>Ranked bargains (top {min(top, len(passed))} of {len(passed)})</h2><div class=wrap>{_table(passed.head(top), "top")}</div>
-<h2>Near misses (fail exactly one filter)</h2><div class=wrap>{_table(near, "near", "Failed")}</div>
-<h2>Definitely not bargains (lowest sector-relative value)</h2><div class=wrap>{_table(dear, "dear")}</div>
+<h2>Near misses (fail exactly one hard filter)</h2><div class=wrap>{_table(near, "near", "Failed")}</div>
+<h2>Definitely not bargains (most expensive vs. sector peers)</h2><div class=wrap>{_table(dear, "dear")}</div>
 <p>Fundamentals: SEC EDGAR XBRL, trailing twelve months, as filed. Prices: Yahoo. Full data: {csv.name}.</p>
 <script>{JS}</script></body></html>"""
     htm = out_dir / f"screen_{d}.html"

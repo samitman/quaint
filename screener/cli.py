@@ -55,7 +55,10 @@ REPORTS = config.ROOT / "reports"
 
 
 def _weights(a):
-    return {"value": a.w_value, "quality": a.w_quality, "trajectory": a.w_trajectory}
+    from . import score
+    score.RANK_BY = a.rank_by
+    return {"value": a.w_value, "growth": a.w_growth, "profitability": a.w_profitability,
+            "balance_sheet": a.w_balance, "price_action": a.w_price}
 
 
 def cmd_screen(a):
@@ -63,7 +66,7 @@ def cmd_screen(a):
     s = screen.run(as_of=a.as_of, weights=_weights(a))
     htm, csv = report.write(s, Path(a.out), top=a.top)
     p = s[s["passes"]]
-    print(p[["sec_name", "sector", "pe", "pb", "fcf_yield", "rev_growth", "fscore", "composite"]]
+    print(p[["sec_name", "sector", "pe", "pb", "fcf_yield", "rev_growth", "value", "bargain"]]
           .head(a.top).to_string(float_format=lambda x: f"{x:.2f}"))
     print(f"{len(p)} pass / {int(s['investable'].sum())} investable -> {htm}")
 
@@ -113,9 +116,13 @@ def main(argv=None):
         s = sub.add_parser(name); s.set_defaults(fn=fn)
         if name == "lookup":
             s.add_argument("tickers", nargs="+")
-        s.add_argument("--w-value", type=float, default=0.5)
-        s.add_argument("--w-quality", type=float, default=0.25)
-        s.add_argument("--w-trajectory", type=float, default=0.25)
+        s.add_argument("--rank-by", choices=["bargain", "blend"], default="bargain",
+                       help="bargain: cheap vs. what fundamentals justify; blend: weighted scores")
+        s.add_argument("--w-value", type=float, default=0.40)
+        s.add_argument("--w-growth", type=float, default=0.25)
+        s.add_argument("--w-profitability", type=float, default=0.20)
+        s.add_argument("--w-balance", type=float, default=0.15)
+        s.add_argument("--w-price", type=float, default=0.0)
         s.add_argument("--out", default=str(REPORTS))
         if name == "screen":
             s.add_argument("--top", type=int, default=50)

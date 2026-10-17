@@ -5,14 +5,14 @@ from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
 
-from . import config, edgar, fundamentals, metrics, prices, score, universe
+from . import config, edgar, fundamentals, metrics, prices, score, universe, yahoo_fill
 
 _STATE: dict = {}
 LATEST = config.DATA_DIR / "latest_xs.pkl"
 
 
-def _init(uni, px):
-    _STATE["uni"], _STATE["px"] = uni, px
+def _init(uni, px, live=False):
+    _STATE["uni"], _STATE["px"], _STATE["live"] = uni, px, live
     _STATE["cf"] = {}
 
 
@@ -34,20 +34,25 @@ def _company_rows(args):
                 continue  # not trading at d
             snap = fundamentals.snapshot(cf, as_of=d).values
             m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits)
+            if _STATE.get("live"):
+                used = yahoo_fill.patch(snap, t, d, m["debt_estimated"])
+                if used:
+                    m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits)
+                m["yahoo_fields"] = ",".join(used)
             m["date"], m["industry"] = d, r["industry"]
             rows.append(m)
     return rows
 
 
 def cross_sections(dates: list[pd.Timestamp], uni: pd.DataFrame | None = None,
-                   px: dict | None = None, workers: int = 4) -> pd.DataFrame:
+                   px: dict | None = None, workers: int = 4, live: bool = False) -> pd.DataFrame:
     """Unscored metrics for every (date, ticker). Point-in-time on fundamentals."""
     uni = universe.load() if uni is None else uni
     uni = uni.set_index("ticker") if "ticker" in uni.columns else uni
     px = prices.load(uni.index.tolist()) if px is None else px
     jobs = [(int(c), dates) for c in uni["cik"].unique()]
     rows = []
-    with ProcessPoolExecutor(workers, initializer=_init, initargs=(uni, px)) as ex:
+    with ProcessPoolExecutor(workers, initializer=_init, initargs=(uni, px, live)) as ex:
         for i, part in enumerate(ex.map(_company_rows, jobs, chunksize=8), 1):
             rows.extend(part)
     df = pd.DataFrame(rows)
@@ -92,8 +97,9 @@ def run(as_of: pd.Timestamp | None = None, weights: dict | None = None) -> pd.Da
     uni = universe.load().set_index("ticker")
     px = prices.load(uni.index.tolist())
     d = pd.Timestamp(as_of) if as_of is not None else px["Close"].index[-1]
-    df = cross_sections([d], uni, px)
+    df = cross_sections([d], uni, px, live=True)
     _fill_missing_shares(df)
     df = df.join(uni[["sec_name", "index", "exchange"]], on="ticker")
+    df = df.join(prices.performance(px, d), on="ticker")
     df.to_pickle(LATEST)  # unscored, so `lookup` can add a ticker and re-score
     return score.score(df.set_index("ticker"), weights).sort_values("composite", ascending=False)

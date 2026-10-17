@@ -20,6 +20,7 @@ from . import config, prices, score, screen, universe
 
 COST_BPS = 10  # one-way, per unit of turnover
 TOP_N = 25
+IC_COLS = ["bargain", "blend", "value", "profitability", "balance_sheet", "growth", "price_action"]
 XS_CACHE = config.DATA_DIR / "backtest_xs.pkl"
 
 
@@ -92,25 +93,29 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
     fwd = (a.shift(-1) / a - 1).iloc[:-1]
     dates = list(fwd.index)
 
-    books = {k: {} for k in ["Screen top 25", "All passers", "Value-only top 25",
+    books = {k: {} for k in ["Bargain top 25", "Blend top 25", "Value-only top 25", "All passers",
                              "Equal-weight universe"] + [f"Q{i}" for i in range(1, 6)]}
     ic_rows = []
     counts = []
     for d in dates:
-        s = score.score(xs[xs["date"] == d].set_index("ticker"), weights)
+        x = xs[xs["date"] == d].set_index("ticker")
+        x = x.drop(columns=[c for c in ("ret_1m", "ret_ytd", "ret_1y", "off_high") if c in x])
+        x = x.join(prices.performance(px, d))  # price-action bucket, as of d only
+        s = score.score(x, weights, rank_by="bargain")
         inv = s[s["investable"]]
         ok = inv[inv["passes"]]
         counts.append({"date": d, "investable": len(inv), "passers": len(ok)})
-        books["Screen top 25"][d] = _ew(ok.nlargest(TOP_N, "composite").index)
+        books["Bargain top 25"][d] = _ew(ok.nlargest(TOP_N, "bargain").index)
+        books["Blend top 25"][d] = _ew(ok.nlargest(TOP_N, "blend").index)
         books["All passers"][d] = _ew(ok.index)
         books["Value-only top 25"][d] = _ew(ok.nlargest(TOP_N, "value").index)
         books["Equal-weight universe"][d] = _ew(inv.index)
-        q = pd.qcut(inv["composite"].rank(method="first"), 5, labels=False) + 1
+        q = pd.qcut(inv["bargain"].rank(method="first"), 5, labels=False) + 1
         for i in range(1, 6):
             books[f"Q{i}"][d] = _ew(q[q == i].index)
         f = fwd.loc[d].reindex(inv.index)
         row = {"date": d}
-        for c in ("composite", "value", "quality", "trajectory"):
+        for c in IC_COLS:
             m = inv[c].notna() & f.notna()
             row[c] = inv.loc[m, c].rank().corr(f[m].rank()) if m.sum() > 30 else np.nan
         ic_rows.append(row)
@@ -125,13 +130,15 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
     half = len(rets) // 2
     halves = pd.DataFrame({
         f"{rets.index[0]:%Y-%m}–{rets.index[half - 1]:%Y-%m}":
-            {k: stats(rets[k].iloc[:half], bench.iloc[:half]).get("Excess/yr") for k in books},
+            {k: stats(rets[k].iloc[:half], bench.iloc[:half]).get("Excess/yr") for k in books
+             if k != "Equal-weight universe"},
         f"{rets.index[half]:%Y-%m}–{rets.index[-1]:%Y-%m}":
-            {k: stats(rets[k].iloc[half:], bench.iloc[half:]).get("Excess/yr") for k in books},
+            {k: stats(rets[k].iloc[half:], bench.iloc[half:]).get("Excess/yr") for k in books
+             if k != "Equal-weight universe"},
     })
     ic = pd.DataFrame(ic_rows).set_index("date")
     ic_summary = pd.DataFrame({"mean IC": ic.mean(), "t-stat": ic.mean() / ic.std() * np.sqrt(ic.count()),
                                "% months > 0": (ic > 0).mean()})
     return {"returns": rets, "table": table, "halves": halves, "ic": ic,
             "ic_summary": ic_summary, "counts": pd.DataFrame(counts).set_index("date"),
-            "holdings": books["Screen top 25"]}
+            "holdings": books["Bargain top 25"]}

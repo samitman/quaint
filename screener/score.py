@@ -46,32 +46,46 @@ def investable(df: pd.DataFrame) -> pd.Series:
 
 
 # --- Step 3: sector-relative scores ----------------------------------------------------
-# Higher is better for every input. Financials get their own lists: no EV, no FCF.
-VALUE = ["earnings_yield", "fcf_yield", "ebit_ev", "book_yield"]
-VALUE_FIN = ["earnings_yield", "book_yield"]
-QUALITY = ["roic", "op_margin", "fcf_conversion"]
-QUALITY_FIN = ["roe"]
-TRAJ = ["rev_growth", "rev_cagr_3y", "margin_change", "ni_growth"]
-TRAJ_FIN = ["rev_growth", "rev_cagr_3y", "ni_growth", "roe_change"]
+# Each bucket averages sector percentiles of its inputs; a leading "-" means lower is
+# better. Financials get their own lists: no EV, no FCF, no EBITDA.
+BUCKETS = {
+    "value": (["earnings_yield", "fcf_yield", "ebit_ev", "book_yield"],
+              ["earnings_yield", "book_yield"]),
+    "profitability": (["roic", "op_margin", "fcf_conversion"], ["roe"]),
+    "balance_sheet": (["-nd_ebitda", "-debt_change", "-debt_equity"], ["equity_assets", "-debt_change"]),
+    "growth": (["rev_growth", "rev_cagr_3y", "margin_change", "ni_growth"],
+               ["rev_growth", "rev_cagr_3y", "ni_growth", "roe_change"]),
+    # 100 = most beaten down. Displayed, not ranked on (see DEFAULT_WEIGHTS).
+    "price_action": (["-ret_1y", "-off_high"], ["-ret_1y", "-off_high"]),
+}
+FUNDAMENTALS = ["profitability", "balance_sheet", "growth"]
 
-DEFAULT_WEIGHTS = {"value": 0.5, "quality": 0.25, "trajectory": 0.25}
+# Blend weights. Price is zero: a big drop is a reason to look, not evidence of value,
+# and 6-12 month losers tend to keep losing. The backtest decides if that changes.
+DEFAULT_WEIGHTS = {"value": 0.40, "growth": 0.25, "profitability": 0.20,
+                   "balance_sheet": 0.15, "price_action": 0.0}
+RANK_BY = "bargain"  # or "blend"
+MIN_FIT = 15  # names needed to fit a sector's valuation model; else pooled fit
 
 
 def _sector_pct(df: pd.DataFrame, col: str, peers: pd.Series) -> pd.Series:
-    """Percentile within sector, computed among `peers` (the investable universe), so a
+    """Percentile within sector, computed against `peers` (the investable universe), so a
     stock is compared with every sector name of size, not just filter survivors."""
-    x = df[col].astype(float).clip(*df.loc[peers, col].astype(float).quantile([0.01, 0.99]))
+    sign = -1.0 if col.startswith("-") else 1.0
+    col = col.lstrip("-")
     out = pd.Series(np.nan, index=df.index)
+    if col not in df:
+        return out
+    x = sign * df[col].astype(float)
     for sec, idx in df.groupby("sector").groups.items():
         ref = x[idx][peers[idx]].dropna().sort_values().to_numpy()
         if len(ref) < 5:
             continue
-        vals = x[idx]
-        ok = vals.notna()
+        vals = x[idx].dropna()
         # Fraction of peers this value beats (ties get half), i.e. a mid-rank percentile.
-        lo = np.searchsorted(ref, vals[ok], side="left")
-        hi = np.searchsorted(ref, vals[ok], side="right")
-        out[vals[ok].index] = (lo + hi) / 2 / len(ref)
+        lo = np.searchsorted(ref, vals, side="left")
+        hi = np.searchsorted(ref, vals, side="right")
+        out[vals.index] = (lo + hi) / 2 / len(ref)
     return out
 
 
@@ -83,17 +97,56 @@ def _bucket(df, cols, cols_fin, peers):
     return a.where(~fin, b)
 
 
-def score(df: pd.DataFrame, weights: dict | None = None) -> pd.DataFrame:
-    """Adds value/quality/trajectory/composite (0-1, higher = bigger bargain) and pass."""
+def _pct_within(x: pd.Series, groups: pd.Series, peers: pd.Series) -> pd.Series:
+    out = pd.Series(np.nan, index=x.index)
+    for _, idx in groups.groupby(groups).groups.items():
+        ref = x[idx][peers[idx]].dropna().sort_values().to_numpy()
+        vals = x[idx].dropna()
+        if len(ref) < 5 or vals.empty:
+            continue
+        out[vals.index] = (np.searchsorted(ref, vals, "left") + np.searchsorted(ref, vals, "right")) / 2 / len(ref)
+    return out
+
+
+def bargain(df: pd.DataFrame, peers: pd.Series) -> pd.Series:
+    """Cheapness the fundamentals don't explain.
+
+    Within each sector, regress the value score on profitability, balance-sheet and
+    growth scores across investable peers: the fit is the valuation the market
+    typically grants that quality. Residual > 0 means cheaper than its quality would
+    predict. Returned as a sector percentile of the residual (1 = biggest bargain).
+    """
+    X = df[FUNDAMENTALS].fillna(0.5)  # unknown quality is treated as average
+    y = df["value"]
+    resid = pd.Series(np.nan, index=df.index)
+
+    def fit(mask):
+        m = mask & y.notna()
+        A = np.column_stack([np.ones(m.sum()), X[m].to_numpy()])
+        coef, *_ = np.linalg.lstsq(A, y[m].to_numpy(), rcond=None)
+        return coef
+
+    pooled = fit(peers)
+    for _, idx in df.groupby("sector").groups.items():
+        sec = df.index.isin(idx)
+        coef = fit(pd.Series(sec, index=df.index) & peers) if (peers & sec & y.notna()).sum() >= MIN_FIT else pooled
+        rows = sec & y.notna().to_numpy()
+        resid[rows] = y[rows] - np.column_stack([np.ones(rows.sum()), X[rows].to_numpy()]) @ coef
+    return _pct_within(resid, df["sector"], peers)
+
+
+def score(df: pd.DataFrame, weights: dict | None = None, rank_by: str | None = None) -> pd.DataFrame:
+    """Adds bucket scores, blend, bargain and the ranking `composite` (all 0-1, higher =
+    better buy), plus filter results."""
     w = {**DEFAULT_WEIGHTS, **(weights or {})}
     peers = investable(df)
     out = df.copy()
-    out["value"] = _bucket(df, VALUE, VALUE_FIN, peers)
-    out["quality"] = _bucket(df, QUALITY, QUALITY_FIN, peers)
-    out["trajectory"] = _bucket(df, TRAJ, TRAJ_FIN, peers)
+    for b, (cols, cols_fin) in BUCKETS.items():
+        out[b] = _bucket(df, cols, cols_fin, peers)
     tot = sum(w.values())
-    out["composite"] = (w["value"] * out["value"].fillna(0) + w["quality"] * out["quality"].fillna(0)
-                        + w["trajectory"] * out["trajectory"].fillna(0)) / tot
+    out["blend"] = sum(w[b] * out[b].fillna(0.5) for b in BUCKETS) / tot
+    out["bargain"] = bargain(out, peers)
+    out["composite"] = out[rank_by or RANK_BY]
     f = filters(df)
     out["investable"] = peers
     out["passes"] = f.all(axis=1)

@@ -336,7 +336,18 @@ def snapshot(cf: dict, as_of: date | None = None) -> Snapshot:
         v["shares_out_dei"], v["shares_out_dei_date"] = None, None
 
     v["total_debt"] = total_debt(v)
-    v["total_debt_prev"] = _first(v.get("lt_debt_total_prev"), v.get("lt_debt_noncurrent_prev"))
+    # Year-ago debt, each item measured a year before its own latest date (10-K-only
+    # filers like CAT have no mid-year value), only for items still in use today.
+    prev = {}
+    for name in _DEBT:
+        df = frames[name]
+        if v.get(name) is None or df.empty:
+            continue
+        target = df["end"].iloc[-1] - pd.Timedelta(days=365)
+        near = df[(df["end"] - target).abs().dt.days <= 45]
+        if len(near):
+            prev[name] = float(near.iloc[-1]["val"])
+    v["total_debt_prev"] = total_debt(prev) if prev else (0.0 if not v["total_debt"] else None)
     return Snapshot(values=v, period_end=anchor)
 
 

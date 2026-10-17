@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from . import edgar, fundamentals, metrics, prices, score, screen, universe
+from . import edgar, fundamentals, metrics, prices, score, screen, universe, yahoo_fill
 
 # Yahoo's sector names -> GICS sector names used by the universe.
 YAHOO_TO_GICS = {
@@ -26,8 +26,12 @@ ROWS = [  # (metric, label, kind) shown with the sector percentile where one exi
     ("roic", "ROIC", "%"), ("roe", "ROE", "%"), ("op_margin", "Operating margin", "%"),
     ("fcf_conversion", "FCF / net income", "%"), ("rev_growth", "Revenue growth (TTM y/y)", "%"),
     ("rev_cagr_3y", "Revenue CAGR 3y", "%"), ("ni_growth", "Net income growth", "%"),
-    ("margin_change", "Op margin change (pp)", "pp"), ("nd_ebitda", "Net debt / EBITDA", "x"),
+    ("margin_change", "Op margin change (pp)", "pp"), ("net_income", "Net income TTM", "B"),
+    ("fcf", "Free cash flow TTM", "B"), ("nd_ebitda", "Net debt / EBITDA", "x"),
+    ("total_debt", "Debt", "B"), ("debt_yoy", "Debt change y/y", "%"),
     ("fscore", "Piotroski F (0-9)", "f"),
+    ("ret_1m", "Return 1 month", "%"), ("ret_ytd", "Return YTD", "%"),
+    ("ret_1y", "Return 1 year", "%"), ("off_high", "From 52-week high", "%"),
 ]
 
 
@@ -47,12 +51,17 @@ def _external_row(ticker: str, latest: pd.DataFrame) -> pd.DataFrame:
     d = pd.Timestamp(latest["date"].iloc[0])
     close = px["Close"][ticker][:d].dropna()
     snap = fundamentals.snapshot(cf, as_of=d).values
-    m = metrics.compute(snap, ticker, sector, float(close.iloc[-1]), as_of=d,
-                        splits=px["Stock Splits"][ticker].fillna(0))
+    splits = px["Stock Splits"][ticker].fillna(0)
+    m = metrics.compute(snap, ticker, sector, float(close.iloc[-1]), as_of=d, splits=splits)
+    used = yahoo_fill.patch(snap, ticker, d, m["debt_estimated"])
+    if used:
+        m = metrics.compute(snap, ticker, sector, float(close.iloc[-1]), as_of=d, splits=splits)
+    m["yahoo_fields"] = ",".join(used)
     m.update(date=d, industry=info.get("industry", ""), sec_name=info.get("longName", ticker),
              index="not in index", exchange=sec.loc[ticker, "exchange"] if "exchange" in sec else "")
     adv = (px["Close"][ticker] * px["Volume"][ticker]).rolling(63, min_periods=40).median()
     m["adv_usd"] = adv.asof(d)
+    m.update(prices.performance(px, d).loc[ticker].to_dict())
     row = pd.DataFrame([m])
     screen._fill_missing_shares(row)
     return row
@@ -76,16 +85,17 @@ def lookup(ticker: str, weights: dict | None = None) -> str:
              "In screener universe" if in_uni else "Not in universe: scored against the universe's sector peers"]
     if r["passes"]:
         rank = list(passed.index).index(ticker) + 1
-        lines.append(f"PASSES all filters. Rank {rank} of {len(passed)} (composite {100 * r['composite']:.0f}/100).")
+        lines.append(f"PASSES all filters. Rank {rank} of {len(passed)} (bargain {100 * r['bargain']:.0f}/100).")
     else:
         would = (passed["composite"] > r["composite"]).sum() + 1
-        lines.append(f"FAILS: {r['failed']}. Composite {100 * r['composite']:.0f}/100 "
+        lines.append(f"FAILS: {r['failed']}. Bargain {100 * r['bargain']:.0f}/100 "
                      f"(would rank about {would} of {len(passed)} if it passed).")
-    lines.append(f"Value {100 * r['value']:.0f} · Quality {100 * r['quality']:.0f} · "
-                 f"Trajectory {100 * r['trajectory']:.0f}   (sector percentiles, {len(peers)} peers)")
+    pc = lambda k: "–" if pd.isna(r[k]) else f"{100 * r[k]:.0f}"
+    lines.append(f"Valuation {pc('value')} · Profitability {pc('profitability')} · Balance sheet "
+                 f"{pc('balance_sheet')} · Growth {pc('growth')} · Price (100=most beaten down) "
+                 f"{pc('price_action')}   [sector percentiles, {len(peers)} peers]")
     lines.append("")
-    better_high = set(score.VALUE + score.QUALITY + score.TRAJ + score.VALUE_FIN
-                      + score.QUALITY_FIN + score.TRAJ_FIN)
+    better_high = {c for a, b in score.BUCKETS.values() for c in a + b if not c.startswith("-")}
     for c, label, kind in ROWS:
         v = r.get(c)
         txt = _fmt(v, kind)
@@ -99,6 +109,8 @@ def lookup(ticker: str, weights: dict | None = None) -> str:
         flags.append("debt estimated from interest expense (no standard debt tags)")
     if r.get("debt_stale"):
         flags.append("debt taken from last 10-K (not tagged in 10-Qs)")
+    if r.get("yahoo_fields"):
+        flags.append(f"from Yahoo (EDGAR gap): {r['yahoo_fields']}")
     if r.get("shares_source") not in ("cover", "diluted"):
         flags.append(f"share count source: {r.get('shares_source')}")
     if flags:

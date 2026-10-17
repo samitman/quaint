@@ -39,10 +39,12 @@ def _xs(n=20):
         "mcap": 5e9, "price": 20.0, "adv_usd": 50e6, "data_age_days": 60,
         "net_income": 1.0, "fcf": 1.0, "nd_ebitda": 0.5, "fscore": 7.0,
     }, index=[f"T{i}" for i in range(2 * n)])
-    for c in set(S.VALUE + S.QUALITY + S.TRAJ + S.VALUE_FIN + S.QUALITY_FIN + S.TRAJ_FIN):
+    cols = {c.lstrip("-") for a, b in S.BUCKETS.values() for c in a + b}
+    for c in cols - {"nd_ebitda"}:
         df[c] = rng.normal(size=2 * n)
     # Sector B is uniformly 10x "cheaper": sector-relative scores must not care.
-    df.loc[df["sector"] == "B", S.VALUE] *= 10
+    value = S.BUCKETS["value"][0]
+    df.loc[df["sector"] == "B", value] *= 10
     return df
 
 
@@ -63,3 +65,20 @@ def test_filters_fail_closed_on_missing_data():
     assert not s.loc["T0", "passes"] and "low_leverage" in s.loc["T0", "failed"]
     assert not s.loc["T1", "passes"]
     assert s.loc["T2", "passes"]
+
+
+def test_bargain_rewards_cheap_given_quality():
+    # Market prices quality: value score falls as profitability rises. One name breaks
+    # the pattern (high quality AND cheap): it must top the bargain ranking, even though
+    # the worst-quality name is cheaper in absolute terms.
+    n = 40
+    q = np.linspace(0, 1, n)
+    df = pd.DataFrame({"sector": "A", "is_financial": False, "mcap": 5e9, "price": 20.0,
+                       "adv_usd": 50e6, "data_age_days": 60, "net_income": 1.0, "fcf": 1.0,
+                       "nd_ebitda": 0.5, "fscore": 7.0}, index=[f"T{i}" for i in range(n)])
+    df["roic"] = df["op_margin"] = df["fcf_conversion"] = q
+    df["earnings_yield"] = df["fcf_yield"] = df["ebit_ev"] = df["book_yield"] = 1 - q
+    df.loc["T38", ["earnings_yield", "fcf_yield", "ebit_ev", "book_yield"]] = 0.9
+    s = S.score(df)
+    assert s["bargain"].idxmax() == "T38"
+    assert s["value"].idxmax() == "T0"

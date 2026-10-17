@@ -10,7 +10,7 @@ import pandas as pd
 
 from . import backtest
 
-SERIES = [("Screen top 25", "--s1"), ("Equal-weight universe", "--s2"), ("SPY", "--s3")]
+SERIES = [("Bargain top 25", "--s1"), ("Equal-weight universe", "--s2"), ("SPY", "--s3")]
 
 CSS = """
 :root{color-scheme:light;--bg:#fcfcfb;--fg:#0b0b0b;--mut:#52514e;--line:#e4e3df;--head:#f3f2ef;
@@ -117,7 +117,7 @@ Value strategies are flattered most, since the cheap stocks that subsequently di
 <h2>Growth of $1 (log scale)</h2>{_chart(rets)}
 <h2>Performance</h2>{_fmt_table(t, pct_cols=("CAGR", "Vol", "MaxDD", "Excess/yr", "Hit rate"))}
 <p>Excess/yr and hit rate are vs. the equal-weight universe. Excess t is the t-stat of the monthly excess return.</p>
-<h2>Composite quintiles (all investable names)</h2>{_fmt_table(q, pct_cols=("CAGR", "Excess/yr"))}
+<h2>Bargain-score quintiles (all investable names, before hard filters)</h2>{_fmt_table(q, pct_cols=("CAGR", "Excess/yr"))}
 <h2>Stability: excess return per year vs. equal-weight universe, by half</h2>{_fmt_table(res["halves"], pct_cols=tuple(res["halves"].columns))}
 <h2>Information coefficient (rank correlation of score with next-month return)</h2>
 {_fmt_table(res["ic_summary"], pct_cols=("% months > 0",))}

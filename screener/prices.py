@@ -81,3 +81,21 @@ def liquidity(px: dict[str, pd.DataFrame], window: int = 63) -> pd.DataFrame:
         "adv_usd": dollar.median(),
         "last_trade": close.apply(lambda s: s.last_valid_index()),
     })
+
+
+def performance(px: dict[str, pd.DataFrame], d: pd.Timestamp) -> pd.DataFrame:
+    """Total return (dividends included) over 1 month, YTD and 1 year to `d`, plus
+    distance from the 52-week high, per ticker."""
+    adj, close = px["Adj Close"][:d], px["Close"][:d]
+
+    def at(when):
+        return adj[:when].ffill().iloc[-1] if len(adj[:when]) else pd.Series(index=adj.columns, dtype=float)
+
+    now = adj.ffill().iloc[-1]
+    year = close[close.index > d - pd.DateOffset(years=1)]
+    return pd.DataFrame({
+        "ret_1m": now / at(d - pd.DateOffset(months=1)) - 1,
+        "ret_ytd": now / at(pd.Timestamp(d.year - 1, 12, 31)) - 1,
+        "ret_1y": now / at(d - pd.DateOffset(years=1)) - 1,
+        "off_high": close.ffill().iloc[-1] / year.max() - 1,
+    })

@@ -194,6 +194,14 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     m["nd_ebitda"] = (_div(net_debt, ebitda) if ebitda and ebitda > 0 else
                       (-1.0 if net_debt <= 0 else None))
     m["debt_equity"] = _div(debt, equity) if equity and equity > 0 else None
+    m["equity_assets"] = _div(equity, v.get("assets"))
+    dp = v.get("total_debt_prev")
+    # Debt change, scaled by assets so a $0 -> $10M move doesn't read as +infinity.
+    m["debt_change"] = (_div(debt - dp, v.get("assets")) if dp is not None and not debt_estimated
+                        and v.get("assets") else None)
+    m["debt_prev"] = dp
+    m["debt_yoy"] = (debt - dp) / dp if dp and not debt_estimated else (
+        0.0 if dp == 0 and debt == 0 else None)
     m["fscore"], m["fscore_n"] = piotroski(v)
     if as_of is not None and m["period_end"] is not None:
         m["data_age_days"] = (pd.Timestamp(as_of) - m["period_end"]).days
