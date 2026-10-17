@@ -96,6 +96,10 @@ def save_screen(scored: pd.DataFrame, columns: list[str]) -> None:
     df.insert(0, "run_at", pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"))
     LOCAL_SQLITE.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(LOCAL_SQLITE) as con:
+        have = {r[1] for r in con.execute("pragma table_info(screens)")}
+        for c in df.columns if have else []:  # report columns get added over time
+            if c not in have:
+                con.execute(f'alter table screens add column "{c}"')
         _clean(df).to_sql("screens", con, if_exists="append", index=False)
 
 

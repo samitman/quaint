@@ -10,7 +10,8 @@ from . import score
 
 COLS = [  # (column, header, format)
     ("sec_name", "Company", "s"), ("sector", "Sector", "s"), ("price", "Price", "$"),
-    ("mcap", "Mkt cap", "B"), ("implied_return", "Implied return", "%b"),
+    ("mcap", "Mkt cap", "$B"), ("revenue", "Revenue", "$B"), ("net_income", "Net income", "$B"),
+    ("implied_return", "Implied return", "%b"),
     ("cash_yield", "= Cash yield", "%"), ("growth_rate", "+ Growth/sh", "%"), ("pe", "P/E", "x"),
     ("ps", "P/S", "x"), ("net_margin", "Net mgn", "%"),
     ("return_on_capital", "ROIC/ROE", "%"), ("nd_ebitda", "ND/EBITDA", "x"),
@@ -18,7 +19,7 @@ COLS = [  # (column, header, format)
     ("flags", "Flags", "s"),
 ]
 CSV_COLS = ["rank", "ticker", "sec_name", "sector", "industry", "exchange", "price", "mcap",
-            "implied_return", "cash_yield", "growth_rate", "pe", "ps", "net_margin", "pb", "ev_ebit",
+            "implied_return", "cash_yield", "growth_rate", "pe", "ps", "revenue", "net_margin", "pb", "ev_ebit",
             "earnings_yield",
             "fcf_yield", "net_income", "fcf", "roic", "roe", "op_margin", "gross_margin",
             "fcf_conversion", "rev_growth", "rev_cagr_3y", "rev_ps_growth", "rev_ps_cagr_3y",
@@ -42,6 +43,9 @@ def _fmt(v, kind):
         return f"{v:,.2f}"
     if kind == "B":
         return f"{v / 1e9:,.1f}B"
+    if kind == "$B":  # dollars, scaled: $812M, $1.25B, -$40M
+        a, sign = abs(v), "-" if v < 0 else ""
+        return f"{sign}${a / 1e9:,.2f}B" if a >= 1e9 else f"{sign}${a / 1e6:,.0f}M"
     if kind == "x":
         return f"{v:.1f}" if abs(v) < 1000 else "≫"
     if kind in ("%", "%b"):
@@ -165,7 +169,7 @@ net margin ≥ {score.MIN_NET_MARGIN:.0%} (financials skip P/S and margin), FCF 
 ROIC ≥ {score.MIN_RETURN_ON_CAPITAL:.0%}, margins not down more than {score.MAX_MARGIN_DROP * 100:.0f}pp, debt under control
 (net debt/EBITDA &lt; {score.MAX_ND_EBITDA:g}), Piotroski ≥ {score.MIN_FSCORE:.0f}, price &gt; $5, median daily volume
 &gt; ${score.MIN_ADV / 1e6:g}M. Universe: S&amp;P 600, 400, 500 and Nasdaq-100. {len(core)} companies pass, plus {len(fins)} financials ranked separately
-(their earnings are levered). Flag <i>cyclical</i> = earnings may be at a cycle peak. Click any header to sort. {html.escape(note)}</p>
+(their earnings are levered). Revenue and net income are the last 12 months. Flag <i>cyclical</i> = earnings may be at a cycle peak. Click any header to sort. {html.escape(note)}</p>
 <h2>Top {min(top, len(core))} picks (max {score.MAX_PER_SECTOR} per sector)</h2>{_table(score.top_n(core, "composite", top), "top")}
 <h2>Financials: top {min(10, len(fins))} (banks, insurers, lenders)</h2>{_table(fins.head(10), "fin")}
 <h2>Near misses: high implied return, one gate failed</h2>{_table(near, "near", "Failed gate")}
