@@ -6,7 +6,7 @@ Fundamentals come from SEC EDGAR XBRL (official, point-in-time). Prices come fro
 ## Setup
 ```
 pip install -r requirements.txt
-export SEC_USER_AGENT="Your Name you@example.com"   # SEC rejects anonymous requests
+export SEC_USER_AGENT="Your Name you@example.com"   # or put it in sec_user_agent.txt
 ```
 
 ## Run

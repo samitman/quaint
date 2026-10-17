@@ -13,7 +13,10 @@ UNIVERSE_FILE = DATA_DIR / "universe.csv"
 
 # SEC requires a descriptive User-Agent with a contact address, or it returns 403.
 # https://www.sec.gov/os/accessing-edgar-data
-SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT", "")
+# Set via env var, or put it in ./sec_user_agent.txt (gitignored).
+_UA_FILE = ROOT / "sec_user_agent.txt"
+SEC_USER_AGENT = os.environ.get("SEC_USER_AGENT") or (
+    _UA_FILE.read_text().strip() if _UA_FILE.exists() else "")
 SEC_MAX_RPS = 8  # SEC hard limit is 10/s; stay under it.
 
 EDGAR_MAX_AGE_DAYS = 7  # filings change quarterly; weekly refresh is plenty
