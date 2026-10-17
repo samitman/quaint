@@ -160,8 +160,8 @@ def write(scored: pd.DataFrame, out_dir: Path, top: int = 25, note: str = "") ->
 <p><b>Implied return</b> = cash yield (average of earnings and free-cash-flow yield) + revenue-per-share growth
 (the lower of the last 12 months and the 3-year rate, capped at {score.MAX_GROWTH:.0%}). Roughly what an owner earns
 per year if the valuation multiple never changes. Only companies passing every gate are ranked:
-US-headquartered, market cap ${score.MIN_MCAP / 1e9:g}B–${score.MAX_MCAP / 1e9:g}B, P/S below its sector median and under {score.MAX_PS:g},
-net margin ≥ {score.MIN_NET_MARGIN:.0%}, FCF positive, revenue per share growing (1y and 3y),
+US-headquartered, market cap ${score.MIN_MCAP / 1e9:g}B–${score.MAX_MCAP / 1e9:g}B, P/S under {score.MAX_PS:g}{" and below its sector median" if score.PS_VS_SECTOR else ""},
+net margin ≥ {score.MIN_NET_MARGIN:.0%} (financials skip P/S and margin), FCF positive, revenue per share growing (1y and 3y),
 ROIC ≥ {score.MIN_RETURN_ON_CAPITAL:.0%}, margins not down more than {score.MAX_MARGIN_DROP * 100:.0f}pp, debt under control
 (net debt/EBITDA &lt; {score.MAX_ND_EBITDA:g}), Piotroski ≥ {score.MIN_FSCORE:.0f}, price &gt; $5, median daily volume
 &gt; ${score.MIN_ADV / 1e6:g}M. Universe: S&amp;P 600, 400, 500 and Nasdaq-100. {len(core)} companies pass, plus {len(fins)} financials ranked separately

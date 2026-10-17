@@ -94,6 +94,8 @@ def _fill_missing_shares(df: pd.DataFrame) -> None:
             n, q = df.at[i, "net_income"], df.at[i, "equity"]
             df.at[i, "pe"] = df.at[i, "mcap"] / n if pd.notna(n) and n > 0 else None
             df.at[i, "pb"] = df.at[i, "mcap"] / q if pd.notna(q) and q > 0 else None
+            r = df.at[i, "revenue"]
+            df.at[i, "ps"] = df.at[i, "mcap"] / r if pd.notna(r) and r > 0 else None
 
 
 def run(as_of: pd.Timestamp | None = None, weights: dict | None = None) -> pd.DataFrame:

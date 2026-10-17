@@ -15,7 +15,7 @@ MAX_MCAP = 5e9
 MIN_PRICE = 5.0
 MIN_ADV = 2e6           # median daily dollar volume; easy to trade at personal size
 MAX_PS = 4.0            # hard ceiling on price / sales
-PS_VS_SECTOR = True     # and below the median P/S of investable sector peers
+PS_VS_SECTOR = False    # optionally also below the median P/S of investable sector peers
 MIN_NET_MARGIN = 0.05   # net income / revenue
 US_ONLY = True          # US business address per SEC
 MAX_ND_EBITDA = 1.0
@@ -43,14 +43,15 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     f["fcf_positive"] = fin | (df["fcf"] > 0)
     f["low_leverage"] = fin | (df["nd_ebitda"] < MAX_ND_EBITDA)
     f["fscore"] = df["fscore"] >= MIN_FSCORE
-    # P/S = P/E x net margin, so an absolute cutoff mostly picks industries; compare to
-    # sector peers instead, with a hard ceiling.
-    f["price_to_sales"] = df["ps"] < MAX_PS
+    # A ceiling only: implied return already ranks cheapness, and a sector-median rule drops
+    # high-margin names in mixed sectors (GNTX vs retailers). Bank "revenue" is too loosely
+    # tagged for P/S or net margin to mean anything, so financials skip both.
+    f["price_to_sales"] = fin | (df["ps"] < MAX_PS)
     if PS_VS_SECTOR:
         peers = f[["mcap", "price", "liquidity", "fresh_data"]].all(axis=1)
         med = df["ps"].where(peers).groupby(df["sector"]).transform("median")
-        f["price_to_sales"] &= df["ps"] < med
-    f["net_margin"] = df["net_margin"] >= MIN_NET_MARGIN
+        f["price_to_sales"] &= fin | (df["ps"] < med)
+    f["net_margin"] = fin | (df["net_margin"] >= MIN_NET_MARGIN)
     if US_ONLY and "us_hq" in df:
         f["us_company"] = df["us_hq"].astype(bool)
     # Growth gates: a bargain must be a growing, improving business, not just a cheap one.

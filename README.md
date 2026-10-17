@@ -36,7 +36,7 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
 
 1. **Gates** (all must pass; missing data fails): US headquarters; market cap $0.3B to $5B; price
    over $5; median daily dollar volume over $2M; filing under 200 days old; TTM net income and FCF
-   positive; net margin at least 5%; P/S below its sector median and under 4x; revenue per share up
+   positive; net margin at least 5% and P/S under 4x (financials skip both: bank revenue tags are unreliable); revenue per share up
    on TTM and 3-year; ROIC at least 10% (ROE for financials); margins not down more than 2pp;
    debt not up more than 25% of assets; net debt/EBITDA under 1.0; Piotroski at least 6; not a
    mortgage REIT. Financials skip FCF and leverage gates and are ranked on their own list.
@@ -51,7 +51,7 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
    an FCF-yield baseline and the equal-weight universe. Universe is today's members, so results
    carry survivorship bias.
 
-Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps`, `--ps-absolute`,
+Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps`, `--ps-vs-sector`,
 `--min-net-margin`, `--max-nd-ebitda`, `--min-adv`, `--include-foreign`, `--top`.
 
 ## XBRL handling worth knowing

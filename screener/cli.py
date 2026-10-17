@@ -66,7 +66,7 @@ def _weights(a):
                       ("MIN_ADV", "min_adv")):
         setattr(score, attr, getattr(a, arg))
     score.US_ONLY = not a.include_foreign
-    score.PS_VS_SECTOR = not a.ps_absolute
+    score.PS_VS_SECTOR = a.ps_vs_sector
     return {"value": a.w_value, "growth": a.w_growth, "profitability": a.w_profitability,
             "balance_sheet": a.w_balance, "price_action": a.w_price}
 
@@ -143,8 +143,8 @@ def main(argv=None):
         s.add_argument("--min-mcap", type=float, default=300e6)
         s.add_argument("--max-mcap", type=float, default=5e9)
         s.add_argument("--max-ps", type=float, default=4.0, help="hard ceiling on price/sales")
-        s.add_argument("--ps-absolute", action="store_true",
-                       help="drop the below-sector-median P/S rule; use only --max-ps")
+        s.add_argument("--ps-vs-sector", action="store_true",
+                       help="also require P/S below the sector median")
         s.add_argument("--min-net-margin", type=float, default=0.05)
         s.add_argument("--max-nd-ebitda", type=float, default=1.0)
         s.add_argument("--min-adv", type=float, default=2e6, help="min median daily $ volume")

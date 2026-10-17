@@ -90,8 +90,9 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
 
 def save_screen(scored: pd.DataFrame, columns: list[str]) -> None:
     """Append one screen run, so picks can be tracked forward (live, out-of-sample)."""
-    df = scored.reset_index().rename(columns={"index": "ticker"})
-    df = df[[c for c in ["ticker"] + columns if c in df.columns]]
+    df = scored.loc[:, ~scored.columns.duplicated()].copy()
+    df["ticker"] = scored.index
+    df = df[[c for c in dict.fromkeys(["ticker"] + columns) if c in df.columns]].reset_index(drop=True)
     df.insert(0, "run_at", pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"))
     LOCAL_SQLITE.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(LOCAL_SQLITE) as con:
