@@ -64,7 +64,7 @@ Numbers below are after fixing a share-count bug (year-ago diluted shares read a
 flattered the earlier run by ~3%/yr.
 | Version (3-month hold) | CAGR | Sharpe | vs equal-weight universe |
 |---|---|---|---|
-| Default (no P/S, no Piotroski) | 21.2% | 0.94 | +3.4%/yr (t 1.0), ahead in both halves at 1m, 3m and 12m holds |
+| Default (no P/S, no Piotroski) | 21.2% | 0.94 | +3.4%/yr (t 1.0); beats the old default in both halves at 1m, 3m and 12m holds |
 | With Piotroski >= 6 gate (old default) | 18.9% | 0.89 | +1.1%/yr |
 | P/S under 4x / below sector median | 18.3% / 13.9% | 0.86 / 0.63 | +0.5% / -3.9%/yr |
 | + FCF after acquisitions / no dilution >3% / excl. high accruals | 21.0% / 20.6% / 20.6% | ~0.94-0.98 | no gain; accruals filter trims drawdown |
