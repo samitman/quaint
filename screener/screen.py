@@ -33,11 +33,13 @@ def _company_rows(args):
             if c.empty or (d - c.index[-1]).days > 10:
                 continue  # not trading at d
             snap = fundamentals.snapshot(cf, as_of=d).values
-            m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits)
+            m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits,
+                                    industry=r["industry"])
             if _STATE.get("live"):
                 used = yahoo_fill.patch(snap, t, d, m["debt_estimated"])
                 if used:
-                    m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits)
+                    m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits,
+                                    industry=r["industry"])
                 m["yahoo_fields"] = ",".join(used)
             m["date"], m["industry"] = d, r["industry"]
             rows.append(m)
@@ -55,6 +57,8 @@ def cross_sections(dates: list[pd.Timestamp], uni: pd.DataFrame | None = None,
     with ProcessPoolExecutor(workers, initializer=_init, initargs=(uni, px, live)) as ex:
         for i, part in enumerate(ex.map(_company_rows, jobs, chunksize=8), 1):
             rows.extend(part)
+            if len(dates) > 1 and i % 100 == 0:
+                print(f"[history] {i}/{len(jobs)} companies", flush=True)
     df = pd.DataFrame(rows)
     # Liquidity: median dollar volume over the prior ~3 months, in traded dollars.
     dollar = px["Close"] * px["Volume"]
@@ -96,6 +100,8 @@ def run(as_of: pd.Timestamp | None = None, weights: dict | None = None) -> pd.Da
     """Live screen: one scored cross-section at the latest price date."""
     uni = universe.load().set_index("ticker")
     px = prices.load(uni.index.tolist())
+    if as_of is None:
+        px = prices.update_today(px)
     d = pd.Timestamp(as_of) if as_of is not None else px["Close"].index[-1]
     df = cross_sections([d], uni, px, live=True)
     _fill_missing_shares(df)

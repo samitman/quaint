@@ -63,10 +63,15 @@ def _weights(a):
 
 def cmd_screen(a):
     from . import report, screen
+    from . import yahoo_fill
     s = screen.run(as_of=a.as_of, weights=_weights(a))
+    p = s[s["passes"]]
+    shown = (p[~p["is_financial"].astype(bool)].head(a.top).index.tolist()
+             + p[p["is_financial"].astype(bool)].head(10).index.tolist())
+    s = yahoo_fill.crosscheck(s, shown)
     htm, csv = report.write(s, Path(a.out), top=a.top)
     p = s[s["passes"]]
-    print(p[["sec_name", "sector", "pe", "pb", "fcf_yield", "rev_growth", "value", "bargain"]]
+    print(p[["sec_name", "sector", "pe", "pb", "fcf_yield", "rev_growth", "bargain", "implied_return"]]
           .head(a.top).to_string(float_format=lambda x: f"{x:.2f}"))
     print(f"{len(p)} pass / {int(s['investable'].sum())} investable -> {htm}")
 
@@ -116,8 +121,10 @@ def main(argv=None):
         s = sub.add_parser(name); s.set_defaults(fn=fn)
         if name == "lookup":
             s.add_argument("tickers", nargs="+")
-        s.add_argument("--rank-by", choices=["bargain", "blend"], default="bargain",
-                       help="bargain: cheap vs. what fundamentals justify; blend: weighted scores")
+        s.add_argument("--rank-by", choices=["implied_return", "bargain", "blend"],
+                       default="implied_return",
+                       help="implied_return: cash yield + growth; bargain: cheap vs. what "
+                            "fundamentals justify (sector-relative); blend: weighted scores")
         s.add_argument("--w-value", type=float, default=0.40)
         s.add_argument("--w-growth", type=float, default=0.25)
         s.add_argument("--w-profitability", type=float, default=0.20)
@@ -125,7 +132,7 @@ def main(argv=None):
         s.add_argument("--w-price", type=float, default=0.0)
         s.add_argument("--out", default=str(REPORTS))
         if name == "screen":
-            s.add_argument("--top", type=int, default=50)
+            s.add_argument("--top", type=int, default=25)
             s.add_argument("--as-of", type=pd.Timestamp, default=None)
         if name == "backtest":
             s.add_argument("--start", default="2017-02-01")

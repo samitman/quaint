@@ -47,15 +47,17 @@ def _external_row(ticker: str, latest: pd.DataFrame) -> pd.DataFrame:
     cf = edgar.fetch(cik)
     if not cf:
         raise SystemExit(f"{ticker}: SEC has no XBRL financials for CIK {cik}.")
-    px = prices.load([ticker], name=f"single_{ticker}_")
+    px = prices.update_today(prices.load([ticker], name=f"single_{ticker}_"))
     d = pd.Timestamp(latest["date"].iloc[0])
     close = px["Close"][ticker][:d].dropna()
     snap = fundamentals.snapshot(cf, as_of=d).values
     splits = px["Stock Splits"][ticker].fillna(0)
-    m = metrics.compute(snap, ticker, sector, float(close.iloc[-1]), as_of=d, splits=splits)
+    m = metrics.compute(snap, ticker, sector, float(close.iloc[-1]), as_of=d, splits=splits,
+                            industry=info.get("industry", ""))
     used = yahoo_fill.patch(snap, ticker, d, m["debt_estimated"])
     if used:
-        m = metrics.compute(snap, ticker, sector, float(close.iloc[-1]), as_of=d, splits=splits)
+        m = metrics.compute(snap, ticker, sector, float(close.iloc[-1]), as_of=d, splits=splits,
+                            industry=info.get("industry", ""))
     m["yahoo_fields"] = ",".join(used)
     m.update(date=d, industry=info.get("industry", ""), sec_name=info.get("longName", ticker),
              index="not in index", exchange=sec.loc[ticker, "exchange"] if "exchange" in sec else "")
@@ -85,10 +87,12 @@ def lookup(ticker: str, weights: dict | None = None) -> str:
              "In screener universe" if in_uni else "Not in universe: scored against the universe's sector peers"]
     if r["passes"]:
         rank = list(passed.index).index(ticker) + 1
-        lines.append(f"PASSES all filters. Rank {rank} of {len(passed)} (bargain {100 * r['bargain']:.0f}/100).")
+        lines.append(f"PASSES all filters. Rank {rank} of {len(passed)} "
+                     f"(implied return {100 * r['implied_return']:.1f}%, bargain {100 * r['bargain']:.0f}/100).")
     else:
         would = (passed["composite"] > r["composite"]).sum() + 1
-        lines.append(f"FAILS: {r['failed']}. Bargain {100 * r['bargain']:.0f}/100 "
+        lines.append(f"FAILS: {r['failed']}. Implied return {100 * r['implied_return']:.1f}%, "
+                     f"bargain {100 * r['bargain']:.0f}/100 "
                      f"(would rank about {would} of {len(passed)} if it passed).")
     pc = lambda k: "–" if pd.isna(r[k]) else f"{100 * r[k]:.0f}"
     lines.append(f"Valuation {pc('value')} · Profitability {pc('profitability')} · Balance sheet "

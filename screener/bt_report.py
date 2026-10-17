@@ -8,17 +8,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import backtest
+from . import backtest, score
 
-SERIES = [("Bargain top 25", "--s1"), ("Equal-weight universe", "--s2"), ("SPY", "--s3")]
+SERIES = [("Implied return + momentum gate", "--s1"), ("Implied return top 25", "--s2"),
+          ("Equal-weight universe", "--s3"), ("SPY", "--s4")]
 
 CSS = """
 :root{color-scheme:light;--bg:#fcfcfb;--fg:#0b0b0b;--mut:#52514e;--line:#e4e3df;--head:#f3f2ef;
---s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a}
+--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100}
 @media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){color-scheme:dark;--bg:#1a1a19;
---fg:#f0efec;--mut:#c3c2b7;--line:#33322f;--head:#232321;--s1:#3987e5;--s2:#d95926;--s3:#199e70}}
+--fg:#f0efec;--mut:#c3c2b7;--line:#33322f;--head:#232321;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500}}
 :root[data-theme="dark"]{color-scheme:dark;--bg:#1a1a19;--fg:#f0efec;--mut:#c3c2b7;--line:#33322f;
---head:#232321;--s1:#3987e5;--s2:#d95926;--s3:#199e70}
+--head:#232321;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500}
 body{background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,system-ui,Segoe UI,sans-serif;margin:24px;max-width:1100px}
 h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 8px}p,li{color:var(--mut)}
 table{border-collapse:collapse}th,td{padding:4px 10px;border-bottom:1px solid var(--line);text-align:right}
@@ -96,32 +97,43 @@ document.getElementById('hit').addEventListener('mouseleave',()=>{{tip.style.dis
 def write(res: dict, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     rets = res["returns"]
-    rets.to_csv(out_dir / "backtest_monthly_returns.csv")
+    for h, r in res["by_hold"].items():
+        r.to_csv(out_dir / f"backtest_returns_hold{h}m.csv")
     res["ic"].to_csv(out_dir / "backtest_ic.csv")
     hold = pd.DataFrame([{"date": d, "tickers": " ".join(w.index)} for d, w in res["holdings"].items()])
     hold.to_csv(out_dir / "backtest_holdings.csv", index=False)
     c = res["counts"]
+    pct = ("CAGR", "Vol", "MaxDD", "Excess/yr", "Hit rate")
+    perf = "".join(f"<h3>Hold {h} month{'s' if h > 1 else ''}</h3>"
+                   + _fmt_table(t.drop(index=[f"Q{i}" for i in range(1, 6)]), pct_cols=pct)
+                   for h, t in res["tables"].items())
     t = res["table"]
     q = t.loc[[f"Q{i}" for i in range(1, 6)], ["CAGR", "Excess/yr", "Sharpe"]]
-    q.index = [f"Q{i}{' (worst)' if i == 1 else ' (best)' if i == 5 else ''}" for i in range(1, 6)]
+    q.index = [f"Q{i}{' (lowest)' if i == 1 else ' (highest)' if i == 5 else ''}" for i in range(1, 6)]
     page = f"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>Screener backtest</title>
-<style>{CSS}</style></head><body>
+<style>{CSS}h3{{font-size:13px;margin:18px 0 6px}}</style></head><body>
 <h1>Point-in-time backtest · {rets.index[0]:%Y-%m} to {rets.index[-1]:%Y-%m}</h1>
-<p>Monthly rebalance, equal weight, {backtest.COST_BPS} bps one-way costs on turnover. Fundamentals use only
-filings public on each rebalance date. Average {c['investable'].mean():.0f} investable names, {c['passers'].mean():.0f}
-passing the hard filters (min {c['passers'].min()}, max {c['passers'].max()}).</p>
+<p>Each month-end, fundamentals are rebuilt from only the filings public that day, the live gates and scores are
+applied, and {backtest.TOP_N} names are bought equal-weight (max {score.MAX_PER_SECTOR} per sector), net of
+{backtest.COST_BPS} bps one-way costs. Holding h months = each month's picks held h months (overlapping
+cohorts). Non-financials only. On average {c['investable'].mean():.0f} investable names and {c['passers'].mean():.0f}
+pass the gates (min {c['passers'].min()}, max {c['passers'].max()}).
+"Baseline" = the 25 highest FCF yields with no other rules: the dumb strategy this has to beat.
+Momentum gate = skip the worst {backtest.MOM_CUT:.0%} of 12-1 month performers.</p>
 <p><b>Bias warning:</b> the universe is today's index members, so delisted, acquired and bankrupt names are missing.
-That inflates absolute returns for every line here; compare strategies with the equal-weight universe, which shares the bias.
-Value strategies are flattered most, since the cheap stocks that subsequently died are exactly the ones absent.</p>
-<h2>Growth of $1 (log scale)</h2>{_chart(rets)}
-<h2>Performance</h2>{_fmt_table(t, pct_cols=("CAGR", "Vol", "MaxDD", "Excess/yr", "Hit rate"))}
-<p>Excess/yr and hit rate are vs. the equal-weight universe. Excess t is the t-stat of the monthly excess return.</p>
-<h2>Bargain-score quintiles (all investable names, before hard filters)</h2>{_fmt_table(q, pct_cols=("CAGR", "Excess/yr"))}
-<h2>Stability: excess return per year vs. equal-weight universe, by half</h2>{_fmt_table(res["halves"], pct_cols=tuple(res["halves"].columns))}
-<h2>Information coefficient (rank correlation of score with next-month return)</h2>
+That inflates absolute returns everywhere, and cheap stocks most. Judge strategies on excess return vs. the
+equal-weight universe (same bias), not on CAGR.</p>
+<h2>Growth of $1, 3-month hold (log scale)</h2>{_chart(rets)}
+<h2>Performance</h2>{perf}
+<p>Excess/yr and hit rate are vs. the equal-weight universe; Excess t is the t-stat of the monthly excess
+(|t| &gt; 2 ≈ unlikely to be luck).</p>
+<h2>Implied-return quintiles, 3-month hold (all investable non-financials, no gates)</h2>{_fmt_table(q, pct_cols=("CAGR", "Excess/yr"))}
+<h2>Stability: excess return per year by half, 3-month hold</h2>{_fmt_table(res["halves"], pct_cols=tuple(res["halves"].columns))}
+<h2>Which inputs predict next-month returns? (rank IC)</h2>
 {_fmt_table(res["ic_summary"], pct_cols=("% months > 0",))}
-<p>Files: backtest_monthly_returns.csv, backtest_ic.csv, backtest_holdings.csv.</p>
+<p>IC = rank correlation between a score and the next month's return across investable non-financials.
+0.02-0.05 with t &gt; 2 is a useful signal; ~0 means the input isn't helping.</p>
 </body></html>"""
     p = out_dir / "backtest.html"
     p.write_text(page)

@@ -302,6 +302,7 @@ def snapshot(cf: dict, as_of: date | None = None) -> Snapshot:
     # Revenue history for multi-year growth/consistency.
     v["revenue_annual"] = a_series["revenue"].tail(6).to_dict()
     v["net_income_annual"] = a_series["net_income"].tail(6).to_dict()
+    v["diluted_shares_annual"] = a_series["diluted_shares"].tail(6).to_dict()
 
     frames = {n: _frame(cf, c, as_of, duration=False) for n, c in INSTANT.items()}
     # The balance-sheet date is the latest Assets/Equity date; anything older is stale.

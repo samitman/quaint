@@ -96,7 +96,17 @@ def build(save: bool = True) -> pd.DataFrame:
     return uni
 
 
+# GICS misfits where the official sector would score a company against the wrong peers.
+# FSLR is GICS "Semiconductors" (it makes thin-film cells) but sells utility-scale solar
+# modules; vs. NVDA/AVGO multiples it always looks cheap. Its economic peers (NXT, GEV)
+# sit in Industrials / Electrical Components & Equipment.
+SECTOR_OVERRIDES = {
+    "FSLR": ("Industrials", "Electrical Components & Equipment"),
+}
+
+
 def load() -> pd.DataFrame:
-    if not config.UNIVERSE_FILE.exists():
-        return build()
-    return pd.read_csv(config.UNIVERSE_FILE)
+    uni = build() if not config.UNIVERSE_FILE.exists() else pd.read_csv(config.UNIVERSE_FILE)
+    for t, (sector, industry) in SECTOR_OVERRIDES.items():
+        uni.loc[uni["ticker"] == t, ["sector", "industry"]] = [sector, industry]
+    return uni

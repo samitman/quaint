@@ -123,3 +123,26 @@ def patch(v: dict, ticker: str, as_of: pd.Timestamp, debt_estimated: bool) -> li
                     used.append(k)
             v["period_end"] = inc.columns[-1]
     return used
+
+
+def crosscheck(s: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
+    """Compare our market cap and P/E with Yahoo's for the names we're about to show.
+    The top of a value screen is where data errors collect (a mis-tagged number makes a
+    stock look cheap), so disagreements are flagged for a human to check."""
+    import yfinance as yf
+    s = s.copy()
+    s["xcheck"] = ""
+    for t in tickers:
+        try:
+            info = yf.Ticker(t).info
+        except Exception:
+            continue
+        notes = []
+        ymc, ype = info.get("marketCap"), info.get("trailingPE")
+        mc, pe = s.at[t, "mcap"], s.at[t, "pe"]
+        if ymc and mc and not 0.8 < mc / ymc < 1.25:
+            notes.append(f"mcap {mc / 1e9:.1f}B vs Yahoo {ymc / 1e9:.1f}B")
+        if ype and pe and not 0.65 < pe / ype < 1.5:
+            notes.append(f"P/E {pe:.1f} vs Yahoo {ype:.1f}")
+        s.at[t, "xcheck"] = "; ".join(notes)
+    return s

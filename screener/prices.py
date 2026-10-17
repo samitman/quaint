@@ -65,6 +65,51 @@ def load(tickers: list[str], *, period: str = "10y", refresh: bool = False,
     return out
 
 
+def update_today(px: dict[str, pd.DataFrame], chunk: int = 200) -> dict[str, pd.DataFrame]:
+    """Overwrite/append the latest session with live intraday data.
+
+    Yahoo's daily history leaves the current session as NaN until it's finalised (often
+    the next morning), so a daily download silently gives yesterday's close. One-minute
+    bars for today are available immediately, in batches.
+    """
+    import yfinance as yf
+
+    tickers = list(px["Close"].columns)
+    closes, vols = [], []
+    for i in range(0, len(tickers), chunk):
+        batch = tickers[i:i + chunk]
+        df = yf.download(batch, period="1d", interval="1m", auto_adjust=False, prepost=False,
+                         group_by="column", threads=True, progress=False)
+        if df.empty:
+            continue
+        c, v = df["Close"], df["Volume"]
+        if isinstance(c, pd.Series):
+            c, v = c.to_frame(batch[0]), v.to_frame(batch[0])
+        closes.append(c.ffill().iloc[-1])
+        vols.append(v.sum())
+        day = pd.Timestamp(c.index[-1].date())
+    if not closes:
+        return px
+    last, vol = pd.concat(closes), pd.concat(vols)
+    out = {}
+    for f, df in px.items():
+        df = df.copy()
+        if day not in df.index:
+            df.loc[day] = float("nan")
+            df = df.sort_index()
+        out[f] = df
+    prev_close = out["Close"][out["Close"].index < day].ffill().iloc[-1]
+    prev_adj = out["Adj Close"][out["Adj Close"].index < day].ffill().iloc[-1]
+    ok = last.dropna().index.intersection(out["Close"].columns)
+    out["Close"].loc[day, ok] = last[ok]
+    # Adjustment factor carries over from the prior session (exact unless ex-div today).
+    out["Adj Close"].loc[day, ok] = (prev_adj[ok] / prev_close[ok] * last[ok]).values
+    out["Volume"].loc[day, ok] = vol.reindex(ok).values
+    out["Stock Splits"].loc[day] = out["Stock Splits"].loc[day].fillna(0)
+    print(f"[prices] live prices for {len(ok)} tickers as of {c.index[-1]}")
+    return out
+
+
 def split_factor_after(splits: pd.Series, when) -> float:
     """Product of split ratios with ex-date after `when`: multiply a share count reported
     at `when` by this to put it on the same basis as Yahoo's split-adjusted Close."""
@@ -98,4 +143,6 @@ def performance(px: dict[str, pd.DataFrame], d: pd.Timestamp) -> pd.DataFrame:
         "ret_ytd": now / at(pd.Timestamp(d.year - 1, 12, 31)) - 1,
         "ret_1y": now / at(d - pd.DateOffset(years=1)) - 1,
         "off_high": close.ffill().iloc[-1] / year.max() - 1,
+        # 12-1 momentum: last year's return skipping the latest month (short-term reversal).
+        "mom_12_1": at(d - pd.DateOffset(months=1)) / at(d - pd.DateOffset(years=1)) - 1,
     })

@@ -21,6 +21,18 @@ SHARE_CLASS_RATIO = {"BRK-B": 1500.0}
 
 FINANCIALS = "Financials"
 
+# Earnings swing with a commodity or industry cycle; a low P/E here is often a peak.
+CYCLICAL_INDUSTRIES = {
+    "Oil & Gas Exploration & Production", "Integrated Oil & Gas", "Oil & Gas Refining & Marketing",
+    "Oil & Gas Equipment & Services", "Oil & Gas Drilling", "Coal & Consumable Fuels",
+    "Gold", "Silver", "Copper", "Diversified Metals & Mining", "Steel", "Aluminum",
+    "Commodity Chemicals", "Fertilizers & Agricultural Chemicals", "Semiconductors",
+    "Homebuilding", "Automobile Manufacturers",
+    "Construction Machinery & Heavy Transportation Equipment", "Airlines", "Marine Transportation",
+    "Forest Products", "Paper & Plastic Packaging Products & Materials",
+}
+CYCLICAL_TICKERS = {"WDC", "STX", "SNDK"}  # memory/storage inside a non-cyclical GICS industry
+
 
 def _div(a, b):
     if a is None or b is None or b == 0 or (isinstance(a, float) and math.isnan(a)) \
@@ -118,7 +130,8 @@ def piotroski(v: dict) -> tuple[float | None, int]:
 
 
 def compute(v: dict, ticker: str, sector: str, price: float | None,
-            as_of: pd.Timestamp | None = None, splits: pd.Series | None = None) -> dict:
+            as_of: pd.Timestamp | None = None, splits: pd.Series | None = None,
+            industry: str = "") -> dict:
     """All metrics for one company.
 
     `price` is Yahoo's split-adjusted Close (today's share basis). `splits` is the
@@ -183,6 +196,18 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     # Trajectory.
     m["rev_growth"] = _growth(rev, rev_p)
     m["rev_cagr_3y"] = cagr(v.get("revenue_annual", {}))
+    # Per-share growth: acquisitions paid for with new stock don't count as growth.
+    sh_now, sh_prev = v.get("diluted_shares"), v.get("diluted_shares_prev")
+    ok_sh = sh_now and sh_prev and 0.5 < sh_now / sh_prev < 2.0  # guard against tag scaling
+    m["rev_ps_growth"] = (_growth(rev / sh_now, rev_p / sh_prev)
+                          if ok_sh and rev is not None and rev_p is not None else m["rev_growth"])
+    ra, sa = pd.Series(v.get("revenue_annual", {})), pd.Series(v.get("diluted_shares_annual", {}))
+    common = ra.index.intersection(sa.index)
+    rps = (ra[common] / sa[common]).sort_index() if len(common) else pd.Series(dtype=float)
+    jumps = sa[common].sort_index().pct_change().abs().max() if len(common) > 1 else 0
+    m["rev_ps_cagr_3y"] = (cagr(rps.to_dict()) if len(rps) >= 4 and jumps < 1.0
+                           else m["rev_cagr_3y"])
+    m["cyclical"] = industry in CYCLICAL_INDUSTRIES or ticker in CYCLICAL_TICKERS
     m["ni_growth"] = _growth(ni, ni_p)
     m["margin_change"] = (m["op_margin"] - m["op_margin_prev"]
                           if m["op_margin"] is not None and m["op_margin_prev"] is not None else None)

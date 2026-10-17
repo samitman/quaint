@@ -15,6 +15,9 @@ MIN_ADV = 10e6
 MAX_ND_EBITDA = 1.5
 MIN_FSCORE = 6.0
 MAX_DATA_AGE_DAYS = 200
+MAX_MARGIN_DROP = 0.02   # operating margin (ROE for financials) may slip at most 2pp y/y
+MAX_DEBT_GROWTH = 0.25   # debt may grow at most 25% y/y unless near net cash
+MIN_RETURN_ON_CAPITAL = 0.10  # ROIC (ROE for financials)
 # Mortgage REITs run 6-10x leverage on rate bets and book mark-to-market swings as
 # earnings, so "P/E 5, 0.8x book" is their permanent state, not a bargain signal.
 EXCLUDED_INDUSTRIES = {"Mortgage REITs"}  # TTM must end within ~2 quarters of the screen date
@@ -34,6 +37,19 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     f["fcf_positive"] = fin | (df["fcf"] > 0)
     f["low_leverage"] = fin | (df["nd_ebitda"] < MAX_ND_EBITDA)
     f["fscore"] = df["fscore"] >= MIN_FSCORE
+    # Growth gates: a bargain must be a growing, improving business, not just a cheap one.
+    # Three-year growth guards against one-year cyclical spikes (memory, commodities).
+    # Per share, so growth bought by issuing stock doesn't count.
+    f["revenue_growing"] = (df["rev_ps_growth"] > 0) & ((df["rev_ps_cagr_3y"] > 0)
+                                                        | (fin & df["rev_ps_cagr_3y"].isna()))
+    # A strong business earns well above its cost of capital.
+    f["quality"] = df["roic"].where(~fin, df.get("roe")) >= MIN_RETURN_ON_CAPITAL
+    margin_trend = df["margin_change"].where(~fin, df.get("roe_change"))
+    f["margins_holding"] = margin_trend > -MAX_MARGIN_DROP
+    # Debt discipline: borrowing may rise only if the balance sheet is near net cash or
+    # the increase is small relative to assets.
+    f["debt_discipline"] = fin | (df["nd_ebitda"] < 0.5) | (df["debt_yoy"] <= MAX_DEBT_GROWTH) \
+        | (df["debt_change"] <= 0.02)
     if "industry" in df:
         f["business_model"] = ~df["industry"].isin(EXCLUDED_INDUSTRIES)
     return f.fillna(False)
@@ -64,7 +80,8 @@ FUNDAMENTALS = ["profitability", "balance_sheet", "growth"]
 # and 6-12 month losers tend to keep losing. The backtest decides if that changes.
 DEFAULT_WEIGHTS = {"value": 0.40, "growth": 0.25, "profitability": 0.20,
                    "balance_sheet": 0.15, "price_action": 0.0}
-RANK_BY = "bargain"  # or "blend"
+RANK_BY = "implied_return"  # or "bargain", "blend"
+MAX_GROWTH = 0.20  # no business compounds revenue at 40% forever; cap what we pay for
 MIN_FIT = 15  # names needed to fit a sector's valuation model; else pooled fit
 
 
@@ -135,6 +152,26 @@ def bargain(df: pd.DataFrame, peers: pd.Series) -> pd.Series:
     return _pct_within(resid, df["sector"], peers)
 
 
+def growth_rate(df: pd.DataFrame) -> pd.Series:
+    """Revenue-per-share growth we're willing to pay for: the LOWER of TTM and 3-year
+    CAGR (persistence, not a one-year spike), clipped to [0, MAX_GROWTH]."""
+    g = pd.concat([df["rev_ps_growth"], df["rev_ps_cagr_3y"]], axis=1).min(axis=1)
+    return g.clip(0, MAX_GROWTH)
+
+
+def cash_yield(df: pd.DataFrame) -> pd.Series:
+    """Mean of earnings and FCF yield; earnings yield alone for financials."""
+    fin = df["is_financial"].astype(bool)
+    return pd.concat([df["earnings_yield"], df["fcf_yield"].where(~fin)], axis=1).mean(axis=1)
+
+
+def implied_return(df: pd.DataFrame) -> pd.Series:
+    """Cash yield + growth: what an owner earns per year if the multiple never changes.
+    Absolute, so it compares across non-financial sectors. Financials are ranked
+    separately because their earnings yield is levered."""
+    return cash_yield(df) + growth_rate(df)
+
+
 def score(df: pd.DataFrame, weights: dict | None = None, rank_by: str | None = None) -> pd.DataFrame:
     """Adds bucket scores, blend, bargain and the ranking `composite` (all 0-1, higher =
     better buy), plus filter results."""
@@ -146,9 +183,23 @@ def score(df: pd.DataFrame, weights: dict | None = None, rank_by: str | None = N
     tot = sum(w.values())
     out["blend"] = sum(w[b] * out[b].fillna(0.5) for b in BUCKETS) / tot
     out["bargain"] = bargain(out, peers)
+    out["cash_yield"] = cash_yield(df)
+    out["growth_rate"] = growth_rate(df)
+    out["implied_return"] = out["cash_yield"] + out["growth_rate"]
     out["composite"] = out[rank_by or RANK_BY]
     f = filters(df)
     out["investable"] = peers
     out["passes"] = f.all(axis=1)
     out["failed"] = f.apply(lambda r: ",".join(c for c, ok in r.items() if not ok), axis=1)
     return out
+
+
+MAX_PER_SECTOR = 7  # ~30% of a 25-name list
+
+
+def top_n(df: pd.DataFrame, col: str, n: int, per_sector: int = MAX_PER_SECTOR) -> pd.DataFrame:
+    """Best `n` by `col`, at most `per_sector` from any one sector (diversification)."""
+    ranked = df.sort_values(col, ascending=False)
+    ranked = ranked[ranked[col].notna()]
+    keep = ranked.groupby("sector").cumcount() < per_sector
+    return ranked[keep].head(n)
