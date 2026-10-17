@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 
 ROOT = Path(os.environ.get("SCREENER_HOME", Path(__file__).resolve().parent.parent))
-DATA_DIR = ROOT / "data"
+# Caches are large (~1k EDGAR files); point SCREENER_DATA at fast local disk if ROOT is a network mount.
+DATA_DIR = Path(os.environ.get("SCREENER_DATA", ROOT / "data"))
 CACHE_DIR = DATA_DIR / "cache"
 EDGAR_CACHE = CACHE_DIR / "edgar"
 PRICE_CACHE = CACHE_DIR / "prices"
@@ -23,8 +24,8 @@ EDGAR_MAX_AGE_DAYS = 7  # filings change quarterly; weekly refresh is plenty
 PRICE_MAX_AGE_HOURS = 12
 
 # Exchanges we accept. SEC's ticker file labels these "NYSE" and "Nasdaq";
-# OTC, CBOE and unlisted names are dropped.
-ALLOWED_EXCHANGES = {"NYSE", "Nasdaq"}
+# Cboe-listed index members (e.g. CBOE itself) are liquid; OTC and unlisted names are dropped.
+ALLOWED_EXCHANGES = {"NYSE", "Nasdaq", "CBOE"}
 
 
 def require_sec_agent() -> str:

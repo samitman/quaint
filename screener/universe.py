@@ -15,13 +15,21 @@ from . import config, http
 WIKI = {
     "SP500": "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
     "SP400": "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies",
-    "NDX": "https://en.wikipedia.org/wiki/Nasdaq-100",
+    "NDX": "https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies",
 }
 SEC_TICKERS = "https://www.sec.gov/files/company_tickers_exchange.json"
 
 _TICKER_COLS = ("Symbol", "Ticker", "Ticker symbol")
-_SECTOR_COLS = ("GICS Sector", "GICS sector")
-_INDUSTRY_COLS = ("GICS Sub-Industry", "GICS Sub-industry", "GICS sub-industry")
+_SECTOR_COLS = ("GICS Sector", "GICS sector", "ICB Industry[1]", "ICB Industry")
+_INDUSTRY_COLS = ("GICS Sub-Industry", "GICS Sub-industry", "GICS sub-industry",
+                  "ICB Subsector[1]", "ICB Subsector")
+
+# The Nasdaq-100 page uses ICB. Map to GICS sectors so sector-relative scoring has one
+# taxonomy. Only Nasdaq-100 names outside the S&P 500/400 end up with these labels.
+_ICB_TO_GICS = {
+    "Technology": "Information Technology", "Telecommunications": "Communication Services",
+    "Basic Materials": "Materials",
+}
 
 
 def norm_ticker(t: str) -> str:
@@ -45,7 +53,7 @@ def _index_members(name: str, url: str) -> pd.DataFrame:
             ind = _pick(t, _INDUSTRY_COLS)
             out = pd.DataFrame({
                 "ticker": t[tick].map(norm_ticker),
-                "sector": t[sector].astype(str),
+                "sector": t[sector].astype(str).replace(_ICB_TO_GICS),
                 "industry": t[ind].astype(str) if ind else "",
             })
             out["index"] = name

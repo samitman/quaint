@@ -24,8 +24,40 @@ def _fresh(p, max_age_days: float) -> bool:
     return p.exists() and (time.time() - p.stat().st_mtime) < max_age_days * 86400
 
 
+# Holding-company reorganisations create a new CIK with no history; the old registrant
+# keeps everything before the switch. Map successor -> predecessors and merge them.
+# `python -m screener audit` lists companies with suspiciously short histories.
+PREDECESSORS: dict[int, list[int]] = {
+    2115436: [34088],  # ExxonMobil Holdings Corp <- Exxon Mobil Corp (2026)
+}
+
+
 def fetch(cik: int, *, refresh: bool = False) -> dict | None:
+    cf = _fetch_one(cik, refresh=refresh)
+    for old in PREDECESSORS.get(cik, []):
+        prev = _fetch_one(old, refresh=refresh)
+        if cf and prev:
+            cf = merge(cf, prev)
+    return cf
+
+
+def merge(new: dict, old: dict) -> dict:
+    """Union of facts; `filed` dates keep point-in-time logic correct across the seam."""
+    out = {"cik": new.get("cik"), "entityName": new.get("entityName"), "facts": {}}
+    for src in (old, new):
+        for ns, concepts in src.get("facts", {}).items():
+            dst = out["facts"].setdefault(ns, {})
+            for c, node in concepts.items():
+                d = dst.setdefault(c, {"units": {}})
+                for u, facts in node["units"].items():
+                    d["units"].setdefault(u, []).extend(facts)
+    return out
+
+
+def _fetch_one(cik: int, *, refresh: bool = False, load: bool = True) -> dict | None:
     p = _path(cik)
+    if not load and not refresh and _fresh(p, config.EDGAR_MAX_AGE_DAYS):
+        return {}
     if not refresh and _fresh(p, config.EDGAR_MAX_AGE_DAYS):
         with gzip.open(p, "rt") as f:
             return json.load(f)
@@ -42,21 +74,24 @@ def fetch(cik: int, *, refresh: bool = False) -> dict | None:
     return data
 
 
-def fetch_many(ciks, *, refresh: bool = False, workers: int = 4) -> dict[int, dict]:
+def fetch_many(ciks, *, refresh: bool = False, workers: int = 4) -> list[int]:
+    """Warm the cache; returns the CIKs that failed. Payloads are not kept in memory
+    (a parsed companyfacts file can be 100MB+ of Python objects)."""
     ciks = sorted(set(int(c) for c in ciks))
-    out: dict[int, dict] = {}
+    failed = []
 
     def one(c):
         try:
-            return c, fetch(c, refresh=refresh)
+            return c, _fetch_one(c, refresh=refresh, load=False) is not None
         except Exception as e:  # one bad filer must not kill the run
             print(f"[edgar] CIK {c}: {e}")
-            return c, None
+            return c, False
 
+    ciks += [o for c in ciks for o in PREDECESSORS.get(c, [])]
     with ThreadPoolExecutor(workers) as ex:
-        for i, (c, d) in enumerate(ex.map(one, ciks), 1):
-            if d:
-                out[c] = d
+        for i, (c, ok) in enumerate(ex.map(one, ciks), 1):
+            if not ok:
+                failed.append(c)
             if i % 100 == 0:
                 print(f"[edgar] {i}/{len(ciks)}")
-    return out
+    return failed

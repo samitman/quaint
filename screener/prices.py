@@ -11,28 +11,30 @@ import pandas as pd
 
 from . import config
 
-_FIELDS = ("Close", "Adj Close", "Volume")
+_FIELDS = ("Close", "Adj Close", "Volume", "Stock Splits")
 
 
-def _cache_path(field: str):
-    return config.PRICE_CACHE / f"{field.replace(' ', '_').lower()}.csv"
+def _cache_path(field: str, name: str = ""):
+    return config.PRICE_CACHE / f"{name}{field.replace(' ', '_').lower()}.csv"
 
 
-def _fresh() -> bool:
-    p = _cache_path("Close")
+def _fresh(name: str = "") -> bool:
+    p = _cache_path("Close", name)
     return p.exists() and (time.time() - p.stat().st_mtime) < config.PRICE_MAX_AGE_HOURS * 3600
 
 
 def load(tickers: list[str], *, period: str = "10y", refresh: bool = False,
-         chunk: int = 100) -> dict[str, pd.DataFrame]:
+         chunk: int = 100, name: str = "") -> dict[str, pd.DataFrame]:
     """Return {'Close', 'Adj Close', 'Volume'} -> DataFrame (dates x tickers).
 
-    Close is the raw traded price (pair it with raw share counts for market cap).
-    Adj Close includes splits and dividends (use it for returns).
+    Yahoo's Close is split-adjusted to today's share basis (not dividend-adjusted), so a
+    historical market cap needs share counts restated with `split_factor_after`.
+    Adj Close adds dividends (use it for returns). Stock Splits is the ratio on ex-date, 0 otherwise.
+    `name` prefixes the cache files, so a benchmark download doesn't replace the universe's.
     """
     tickers = sorted(set(tickers))
-    if not refresh and _fresh():
-        out = {f: pd.read_csv(_cache_path(f), index_col=0, parse_dates=True) for f in _FIELDS}
+    if not refresh and _fresh(name):
+        out = {f: pd.read_csv(_cache_path(f, name), index_col=0, parse_dates=True) for f in _FIELDS}
         if set(tickers) <= set(out["Close"].columns):
             return {f: df[tickers] for f, df in out.items()}
 
@@ -41,10 +43,13 @@ def load(tickers: list[str], *, period: str = "10y", refresh: bool = False,
     frames = {f: [] for f in _FIELDS}
     for i in range(0, len(tickers), chunk):
         batch = tickers[i:i + chunk]
-        df = yf.download(batch, period=period, auto_adjust=False, actions=False,
+        df = yf.download(batch, period=period, auto_adjust=False, actions=True,
                          group_by="column", threads=True, progress=False)
         for f in _FIELDS:
-            part = df[f]
+            if f not in df.columns.get_level_values(0):
+                part = pd.DataFrame(0.0, index=df.index, columns=batch)
+            else:
+                part = df[f]
             if isinstance(part, pd.Series):  # single-ticker batch
                 part = part.to_frame(batch[0])
             frames[f].append(part)
@@ -56,8 +61,15 @@ def load(tickers: list[str], *, period: str = "10y", refresh: bool = False,
         print(f"[prices] no data for {len(empty)}: {empty[:15]}")
     config.PRICE_CACHE.mkdir(parents=True, exist_ok=True)
     for f, df in out.items():
-        df.to_csv(_cache_path(f))
+        df.to_csv(_cache_path(f, name))
     return out
+
+
+def split_factor_after(splits: pd.Series, when) -> float:
+    """Product of split ratios with ex-date after `when`: multiply a share count reported
+    at `when` by this to put it on the same basis as Yahoo's split-adjusted Close."""
+    s = splits[(splits.index > pd.Timestamp(when)) & (splits > 0)]
+    return float(s.prod()) if len(s) else 1.0
 
 
 def liquidity(px: dict[str, pd.DataFrame], window: int = 63) -> pd.DataFrame:

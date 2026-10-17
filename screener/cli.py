@@ -3,6 +3,10 @@
     python -m screener universe          # rebuild index membership + CIK map
     python -m screener fetch             # pull/refresh EDGAR facts and prices
     python -m screener check AAPL KO     # print the derived fundamentals for a few tickers
+    python -m screener screen            # live ranked report -> reports/screen_<date>.html/.csv
+    python -m screener backtest          # point-in-time monthly backtest -> reports/backtest.html
+    python -m screener lookup PLTR KO    # one stock's rank and breakdown, in the universe or not
+    python -m screener audit             # data-quality flags across the universe
 """
 from __future__ import annotations
 
@@ -10,7 +14,9 @@ import argparse
 
 import pandas as pd
 
-from . import edgar, fundamentals, prices, universe
+from pathlib import Path
+
+from . import config, edgar, fundamentals, prices, universe
 
 
 def cmd_universe(a):
@@ -45,6 +51,53 @@ def cmd_check(a):
     print(pd.DataFrame(rows).to_string())
 
 
+REPORTS = config.ROOT / "reports"
+
+
+def _weights(a):
+    return {"value": a.w_value, "quality": a.w_quality, "trajectory": a.w_trajectory}
+
+
+def cmd_screen(a):
+    from . import report, screen
+    s = screen.run(as_of=a.as_of, weights=_weights(a))
+    htm, csv = report.write(s, Path(a.out), top=a.top)
+    p = s[s["passes"]]
+    print(p[["sec_name", "sector", "pe", "pb", "fcf_yield", "rev_growth", "fscore", "composite"]]
+          .head(a.top).to_string(float_format=lambda x: f"{x:.2f}"))
+    print(f"{len(p)} pass / {int(s['investable'].sum())} investable -> {htm}")
+
+
+def cmd_backtest(a):
+    from . import backtest, bt_report
+    xs = backtest.build(start=a.start, reuse=not a.rebuild)
+    res = backtest.run(xs, weights=_weights(a))
+    print(res["table"].to_string(float_format=lambda x: f"{x:.3f}"))
+    print(res["ic_summary"].to_string(float_format=lambda x: f"{x:.3f}"))
+    print(bt_report.write(res, Path(a.out)))
+
+
+def cmd_lookup(a):
+    from . import lookup
+    for t in a.tickers:
+        print(lookup.lookup(t, weights=_weights(a)))
+        print()
+
+
+def cmd_audit(a):
+    from . import screen
+    s = screen.run()
+    inv = s[s["investable"]]
+    print(f"investable {len(inv)} of {len(s)}")
+    for col in ("revenue", "net_income", "equity", "ebit", "fcf", "fscore", "shares"):
+        miss = inv[inv[col].isna()].index.tolist()
+        print(f"missing {col}: {len(miss)} {miss[:20]}")
+    print("stale data (>200d):", s[s["data_age_days"] > 200].index.tolist())
+    print("eps-implied/class shares:", s[~s["shares_source"].isin(["cover", "diluted"])]["shares_source"].to_dict())
+    print("debt from last 10-K only:", s[s["debt_stale"]].index.tolist()[:40])
+    print("no debt tags at all:", s[~s["debt_tagged"]].index.tolist()[:40])
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="screener")
     sub = p.add_subparsers(required=True)
@@ -55,5 +108,20 @@ def main(argv=None):
     s = sub.add_parser("check"); s.set_defaults(fn=cmd_check)
     s.add_argument("tickers", nargs="+")
     s.add_argument("--as-of", type=pd.Timestamp, default=None)
+    for name, fn in (("screen", cmd_screen), ("backtest", cmd_backtest), ("audit", cmd_audit),
+                     ("lookup", cmd_lookup)):
+        s = sub.add_parser(name); s.set_defaults(fn=fn)
+        if name == "lookup":
+            s.add_argument("tickers", nargs="+")
+        s.add_argument("--w-value", type=float, default=0.5)
+        s.add_argument("--w-quality", type=float, default=0.25)
+        s.add_argument("--w-trajectory", type=float, default=0.25)
+        s.add_argument("--out", default=str(REPORTS))
+        if name == "screen":
+            s.add_argument("--top", type=int, default=50)
+            s.add_argument("--as-of", type=pd.Timestamp, default=None)
+        if name == "backtest":
+            s.add_argument("--start", default="2017-02-01")
+            s.add_argument("--rebuild", action="store_true", help="recompute point-in-time history")
     a = p.parse_args(argv)
     a.fn(a)

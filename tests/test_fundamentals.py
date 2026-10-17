@@ -6,7 +6,7 @@ import pandas as pd
 from screener import fundamentals as F
 
 
-def fact(start, end, val, filed, form="10-Q"):
+def fact(start, end, val, filed, form="10-Q"):  # noqa: D103
     d = {"end": end, "val": val, "filed": filed, "form": form}
     if start:
         d["start"] = start
@@ -75,5 +75,6 @@ def test_total_debt_and_share_fallback():
     assert F.total_debt(v) == 125.0
     assert F.total_debt({"lt_debt_total": 50.0}) == 50.0
     assert F.shares_outstanding({"shares_out_dei": 10.0, "diluted_shares": 10.5}) == 10.0
-    # Multi-class issuer reporting one class on the cover: implausible, use diluted.
-    assert F.shares_outstanding({"shares_out_dei": 3.0, "diluted_shares": 12.0}) == 12.0
+    # Two sources agreeing beat a lone outlier.
+    assert F.shares_outstanding({"shares_out_dei": 3.0, "diluted_shares": 12.0,
+                                 "eps_implied_shares": 12.5}) == 12.0
