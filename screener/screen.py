@@ -83,7 +83,8 @@ def _fill_missing_shares(df: pd.DataFrame) -> None:
         if sh:
             df.at[i, "shares"], df.at[i, "shares_source"] = float(sh), "yahoo"
             df.at[i, "mcap"] = df.at[i, "price"] * sh
-            for c, num in (("earnings_yield", "net_income"), ("fcf_yield", "fcf"), ("book_yield", "equity")):
+            for c, num in (("earnings_yield", "net_income"), ("fcf_yield", "fcf"), ("book_yield", "equity"),
+                           ("fcf_acq_yield", "fcf_post_acq"), ("shareholder_yield", "payout")):
                 if pd.notna(df.at[i, num]):
                     df.at[i, c] = df.at[i, num] / df.at[i, "mcap"]
             ev = df.at[i, "mcap"] + df.at[i, "net_debt"]

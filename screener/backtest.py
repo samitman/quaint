@@ -21,7 +21,7 @@ from . import config, prices, score, screen, universe
 COST_BPS = 10  # one-way, per unit of turnover
 TOP_N = 25
 IC_COLS = ["implied_return", "cash_yield", "growth_rate", "bargain", "value", "profitability",
-           "balance_sheet", "growth", "mom_12_1", "price_action", "ins_buyers", "ins_net_pct"]
+           "balance_sheet", "growth", "mom_12_1", "price_action", "ins_buyers", "ins_net_pct", "shareholder_yield", "fcf_acq_yield", "share_change", "accruals", "asset_growth"]
 XS_CACHE = config.DATA_DIR / "backtest_xs.pkl"
 
 
@@ -103,12 +103,20 @@ STRATEGIES = [
     "Implied return, P/S below sector median",
     "Bargain top 25",
     "Baseline: top 25 FCF yield",
+    "IR, FCF after acquisitions",
+    "IR + shareholder yield",
+    "IR, no dilution >3%",
+    "IR, excl. high accruals",
+    "IR, excl. fast asset growth",
     "Implied return + insider tilt",
     "Gated, insiders bought (6M)",
     "Insider cluster buys (any investable)",
     "All gated names",
     "Equal-weight universe",
 ]
+# Gate ablation: the default top 25 with one gate switched off, to find gates that only skew the list.
+ABLATE = ["fcf_positive", "low_leverage", "revenue_growing", "quality", "margins_holding",
+          "debt_discipline", "net_margin", "profitable"]
 HOLDS = (1, 3, 12)
 MOM_CUT = 0.2  # momentum gate drops the worst 20% of 12-1 month performers
 
@@ -136,7 +144,8 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
 
     from . import insider
     trades = insider.build()
-    books = {k: {} for k in STRATEGIES + [f"Q{i}" for i in range(1, 6)]}
+    books = {k: {} for k in STRATEGIES + [f"Without {g}" for g in ABLATE] + ["Top 25, no sector cap", "With Piotroski >= 6 gate"]
+             + [f"Q{i}" for i in range(1, 6)]}
     ic_rows, counts = [], []
     for d in dates:
         x = xs[xs["date"] == d].set_index("ticker")
@@ -165,6 +174,28 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
             score.top_n(ok_sec, "implied_return", TOP_N).index)
         books["Bargain top 25"][d] = _ew(score.top_n(ok, "bargain", TOP_N).index)
         books["Baseline: top 25 FCF yield"][d] = _ew(inv.nlargest(TOP_N, "fcf_yield").index)
+        fa = score.filters(x.loc[inv.index])
+        for g in ABLATE:
+            if g in fa:
+                okg = inv[fa.drop(columns=g).all(axis=1)]
+                books[f"Without {g}"][d] = _ew(score.top_n(okg, "implied_return", TOP_N).index)
+        books["Top 25, no sector cap"][d] = _ew(ok.nlargest(TOP_N, "implied_return").index)
+        books["With Piotroski >= 6 gate"][d] = _ew(score.top_n(ok[ok["fscore"] >= 6], "implied_return", TOP_N).index)
+        ey = ok["earnings_yield"]
+        cy_acq = pd.concat([ey, ok["fcf_acq_yield"].clip(upper=score.FCF_CAP * ey.clip(lower=0))],
+                           axis=1).mean(axis=1)
+        books["IR, FCF after acquisitions"][d] = _ew(
+            score.top_n(ok.assign(k=cy_acq + ok["growth_rate"]), "k", TOP_N).index)
+        books["IR + shareholder yield"][d] = _ew(score.top_n(
+            ok.assign(k=ok["implied_return"] + ok["shareholder_yield"].fillna(0).clip(0, 0.15)), "k", TOP_N).index)
+        books["IR, no dilution >3%"][d] = _ew(score.top_n(
+            ok[~(ok["share_change"] > 0.03)], "implied_return", TOP_N).index)
+        acc_hi = inv["accruals"].quantile(0.8)
+        books["IR, excl. high accruals"][d] = _ew(score.top_n(
+            ok[~(ok["accruals"] > acc_hi)], "implied_return", TOP_N).index)
+        ag_hi = inv["asset_growth"].quantile(0.8)
+        books["IR, excl. fast asset growth"][d] = _ew(score.top_n(
+            ok[~(ok["asset_growth"] > ag_hi)], "implied_return", TOP_N).index)
         tilted = ok.assign(tilted=ok["implied_return"] + score.insider_bonus(ok))
         books["Implied return + insider tilt"][d] = _ew(score.top_n(tilted, "tilted", TOP_N).index)
         books["Gated, insiders bought (6M)"][d] = _ew(ok[ok["ins_buyers"] >= 1].index)

@@ -331,7 +331,7 @@ check why. <i>Yahoo-filled</i>, <i>debt from 10-K</i>, <i>lagged filing</i>: som
 price over $5; median daily trading over ${score.MIN_ADV / 1e6:g}M; profitable; positive free cash flow;
 net margin ≥ {score.MIN_NET_MARGIN:.0%}{f"; P/S under {score.MAX_PS:g}" if score.MAX_PS else ""}{"; P/S below sector median" if score.PS_VS_SECTOR else ""};
 revenue per share up over 1 and 3 years; ROIC ≥ {score.MIN_RETURN_ON_CAPITAL:.0%}; margins not down more than
-{score.MAX_MARGIN_DROP * 100:.0f} points; net debt/EBITDA under {score.MAX_ND_EBITDA:g}; Piotroski score ≥ {score.MIN_FSCORE:.0f}.
+{score.MAX_MARGIN_DROP * 100:.0f} points; net debt/EBITDA under {score.MAX_ND_EBITDA:g}{f"; Piotroski score ≥ {score.MIN_FSCORE:.0f}" if score.MIN_FSCORE else ""}.
 Financials skip the cash-flow, margin and debt tests.</dd>
 </dl></details>
 <h2>Top {min(top, len(core))} picks (max {score.MAX_PER_SECTOR} per sector)</h2>{_table(score.top_n(core, "composite", top), "top")}

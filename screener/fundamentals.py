@@ -38,6 +38,11 @@ FLOW = {
             "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
     "capex": ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets",
               "PaymentsForCapitalImprovements"],
+    # Cash returned / spent outside capex: for shareholder yield and acquisition-adjusted FCF.
+    "acquisitions": ["PaymentsToAcquireBusinessesNetOfCashAcquired", "PaymentsToAcquireBusinessesGross",
+                     "PaymentsToAcquireBusinessesAndInterestInAffiliates"],
+    "buybacks": ["PaymentsForRepurchaseOfCommonStock"],
+    "dividends": ["PaymentsOfDividendsCommonStock", "PaymentsOfDividends"],
     "sbc": ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"],
     "dna": ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization",
             "DepreciationAmortizationAndAccretionNet", "Depreciation"],
@@ -94,7 +99,7 @@ _DEBT = {"lt_debt_noncurrent", "lt_debt_current", "lt_debt_total", "st_debt", "d
 _EMPTY = pd.Series(dtype=float, index=pd.DatetimeIndex([]))
 
 # Flows where a negative value would be a sign-convention error, not economics.
-_POSITIVE_FLOWS = {"capex", "sbc", "dna", "diluted_shares", "interest_expense"}
+_POSITIVE_FLOWS = {"capex", "sbc", "acquisitions", "buybacks", "dividends", "dna", "diluted_shares", "interest_expense"}
 
 
 def _facts(cf: dict, concept: str, unit_pref=("USD", "shares", "USD/shares")) -> list[dict]:
@@ -354,8 +359,11 @@ def snapshot(cf: dict, as_of: date | None = None) -> Snapshot:
 
 
 def _latest_avg(q: pd.Series, a: pd.Series, anchor) -> float | None:
-    """Most recent quarterly average, else the fiscal-year one, if not stale."""
+    """Quarterly average for the quarter ending at `anchor`, else the fiscal-year one, if not stale.
+    Only periods ending on or before the anchor count, so a year-ago anchor gets year-ago shares."""
     for s, tol in ((q, _STALE_DAYS), (a, 200)):
+        if anchor is not None:
+            s = s[s.index <= anchor + pd.Timedelta(days=10)]
         if len(s) and (anchor is None or (anchor - s.index[-1]).days <= tol):
             return float(s.iloc[-1])
     return None

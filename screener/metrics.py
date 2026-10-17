@@ -231,6 +231,18 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     m["debt_prev"] = dp
     m["debt_yoy"] = (debt - dp) / dp if dp and not debt_estimated else (
         0.0 if dp == 0 and debt == 0 else None)
+    # Candidate factors (2026-10 test): cash out the door, earnings quality, balance-sheet expansion.
+    acq = v.get("acquisitions_ttm") or 0.0
+    m["acquisitions"] = acq
+    m["fcf_post_acq"] = fcf - acq if fcf is not None else None
+    m["fcf_acq_yield"] = _div(m["fcf_post_acq"], mcap)
+    m["payout"] = (v.get("dividends_ttm") or 0.0) + (v.get("buybacks_ttm") or 0.0)
+    m["shareholder_yield"] = _div(m["payout"], mcap)
+    m["share_change"] = sh_now / sh_prev - 1 if ok_sh else None
+    assets, assets_p = v.get("assets"), v.get("assets_prev")
+    avg_assets = (assets + assets_p) / 2 if assets and assets_p else assets
+    m["accruals"] = _div(ni - cfo, avg_assets) if ni is not None and cfo is not None and avg_assets else None
+    m["asset_growth"] = assets / assets_p - 1 if assets and assets_p and assets_p > 0 else None
     m["fscore"], m["fscore_n"] = piotroski(v)
     if as_of is not None and m["period_end"] is not None:
         m["data_age_days"] = (pd.Timestamp(as_of) - m["period_end"]).days

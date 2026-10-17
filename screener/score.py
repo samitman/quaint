@@ -21,7 +21,7 @@ PS_VS_SECTOR = False    # optionally also below the median P/S of investable sec
 MIN_NET_MARGIN = 0.05   # net income / revenue
 US_ONLY = True          # US business address per SEC
 MAX_ND_EBITDA = 1.0
-MIN_FSCORE = 6.0
+MIN_FSCORE = None       # optional Piotroski floor; off by default (backtest 2026-10: gate cost ~2%/yr)
 MAX_DATA_AGE_DAYS = 200
 MAX_MARGIN_DROP = 0.02   # operating margin (ROE for financials) may slip at most 2pp y/y
 MAX_DEBT_GROWTH = 0.25   # debt may grow at most 25% y/y unless near net cash
@@ -44,7 +44,8 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     f["profitable"] = df["net_income"] > 0
     f["fcf_positive"] = fin | (df["fcf"] > 0)
     f["low_leverage"] = fin | (df["nd_ebitda"] < MAX_ND_EBITDA)
-    f["fscore"] = df["fscore"] >= MIN_FSCORE
+    if MIN_FSCORE:  # redundant with the profit, margin and leverage gates; see README
+        f["fscore"] = df["fscore"] >= MIN_FSCORE
     if "red_flags" in df:  # restatement or bankruptcy filing in the last year (8-K)
         f["no_red_flags"] = df["red_flags"].fillna("") == ""
     # A ceiling only: implied return already ranks cheapness, and a sector-median rule drops

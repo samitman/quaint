@@ -63,6 +63,7 @@ def _weights(a):
     score.RANK_BY = a.rank_by
     for attr, arg in (("MIN_MCAP", "min_mcap"), ("MAX_MCAP", "max_mcap"), ("MAX_PS", "max_ps"),
                       ("MIN_NET_MARGIN", "min_net_margin"), ("MAX_ND_EBITDA", "max_nd_ebitda"),
+                      ("MIN_FSCORE", "min_fscore"),
                       ("MIN_ADV", "min_adv")):
         setattr(score, attr, getattr(a, arg))
     score.US_ONLY = not a.include_foreign
@@ -150,6 +151,7 @@ def main(argv=None):
                        help="also require P/S below the sector median")
         s.add_argument("--min-net-margin", type=float, default=0.05)
         s.add_argument("--max-nd-ebitda", type=float, default=1.0)
+        s.add_argument("--min-fscore", type=float, default=None, help="optional Piotroski floor (e.g. 6)")
         s.add_argument("--min-adv", type=float, default=2e6, help="min median daily $ volume")
         s.add_argument("--include-foreign", action="store_true", help="allow non-US HQ")
         s.add_argument("--w-value", type=float, default=0.40)
