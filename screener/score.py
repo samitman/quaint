@@ -14,6 +14,7 @@ MIN_MCAP = 300e6
 MAX_MCAP = 5e9
 MIN_PRICE = 5.0
 MIN_ADV = 2e6           # median daily dollar volume; easy to trade at personal size
+FCF_CAP = 2.0           # in cash yield, FCF yield is capped at 2x earnings yield
 MAX_PS = 4.0            # hard ceiling on price / sales
 PS_VS_SECTOR = False    # optionally also below the median P/S of investable sector peers
 MIN_NET_MARGIN = 0.05   # net income / revenue
@@ -179,7 +180,11 @@ def growth_rate(df: pd.DataFrame) -> pd.Series:
 def cash_yield(df: pd.DataFrame) -> pd.Series:
     """Mean of earnings and FCF yield; earnings yield alone for financials."""
     fin = df["is_financial"].astype(bool)
-    return pd.concat([df["earnings_yield"], df["fcf_yield"].where(~fin)], axis=1).mean(axis=1)
+    # FCF can't count for more than FCF_CAP x earnings: a big gap is usually cash spent on
+    # acquisitions (outside capex), working-capital swings or one-offs, not lasting yield.
+    ey = df["earnings_yield"]
+    fy = df["fcf_yield"].clip(upper=FCF_CAP * ey.clip(lower=0))
+    return pd.concat([ey, fy.where(~fin)], axis=1).mean(axis=1)
 
 
 def implied_return(df: pd.DataFrame) -> pd.Series:

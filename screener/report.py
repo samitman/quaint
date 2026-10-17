@@ -21,7 +21,7 @@ COLS = [  # (column, header, format)
 CSV_COLS = ["rank", "ticker", "sec_name", "sector", "industry", "exchange", "price", "mcap",
             "implied_return", "cash_yield", "growth_rate", "pe", "ps", "revenue", "net_margin", "pb", "ev_ebit",
             "earnings_yield",
-            "fcf_yield", "net_income", "fcf", "roic", "roe", "op_margin", "gross_margin",
+            "fcf_yield", "net_income", "fcf", "sbc", "roic", "roe", "op_margin", "gross_margin",
             "fcf_conversion", "rev_growth", "rev_cagr_3y", "rev_ps_growth", "rev_ps_cagr_3y",
             "ni_growth", "margin_change", "nd_ebitda", "debt_equity", "total_debt", "debt_prev",
             "debt_yoy", "cash", "ev", "fscore", "ret_1m", "ret_ytd", "ret_1y", "off_high",
@@ -89,6 +89,11 @@ def _flags(r) -> str:
         out.append("lagged filing")
     if r.get("shares_source") not in ("cover", "diluted", None):
         out.append(f"shares: {r.get('shares_source')}")
+    fcf, ni = r.get("fcf"), r.get("net_income")
+    if not r.get("is_financial") and not _na(fcf) and not _na(ni) and ni > 0:
+        k = fcf / ni
+        if k > score.FCF_CAP or k < 1 / score.FCF_CAP:
+            out.append(f"FCF {k:.1f}x earnings")
     if r.get("xcheck"):
         out.append(f"CHECK: {r['xcheck']}")
     return ", ".join(out)

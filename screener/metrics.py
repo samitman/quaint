@@ -154,7 +154,9 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     rev, rev_p = v.get("revenue_ttm"), v.get("revenue_ttm_prev")
     ni, ni_p = v.get("net_income_ttm"), v.get("net_income_ttm_prev")
     cfo, capex = v.get("cfo_ttm"), v.get("capex_ttm") or 0.0
-    fcf = cfo - capex if cfo is not None else None
+    # Owner FCF: stock comp is a real cost to shareholders even though it is non-cash.
+    sbc = v.get("sbc_ttm") or 0.0
+    fcf = cfo - capex - sbc if cfo is not None else None
     e, e_p = ebit(v), ebit(v, "_prev")
     dna = v.get("dna_ttm") or 0.0
     debt = v.get("total_debt") or 0.0
@@ -171,7 +173,7 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     net_debt = debt - cash
     ev = mcap + net_debt if mcap is not None else None
 
-    m.update(revenue=rev, net_income=ni, fcf=fcf, ebit=e, equity=equity,
+    m.update(revenue=rev, net_income=ni, fcf=fcf, sbc=sbc, ebit=e, equity=equity,
              total_debt=debt, cash=cash, net_debt=net_debt, ev=ev,
              debt_stale=v.get("debt_stale", False), debt_tagged=_debt_tagged(v),
              debt_estimated=debt_estimated)

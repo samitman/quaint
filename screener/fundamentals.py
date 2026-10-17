@@ -38,6 +38,7 @@ FLOW = {
             "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
     "capex": ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets",
               "PaymentsForCapitalImprovements"],
+    "sbc": ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"],
     "dna": ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization",
             "DepreciationAmortizationAndAccretionNet", "Depreciation"],
     "diluted_shares": ["WeightedAverageNumberOfDilutedSharesOutstanding"],
@@ -93,7 +94,7 @@ _DEBT = {"lt_debt_noncurrent", "lt_debt_current", "lt_debt_total", "st_debt", "d
 _EMPTY = pd.Series(dtype=float, index=pd.DatetimeIndex([]))
 
 # Flows where a negative value would be a sign-convention error, not economics.
-_POSITIVE_FLOWS = {"capex", "dna", "diluted_shares", "interest_expense"}
+_POSITIVE_FLOWS = {"capex", "sbc", "dna", "diluted_shares", "interest_expense"}
 
 
 def _facts(cf: dict, concept: str, unit_pref=("USD", "shares", "USD/shares")) -> list[dict]:
