@@ -36,11 +36,12 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
 
 1. **Gates** (all must pass; missing data fails): US headquarters; market cap $0.3B to $5B; price
    over $5; median daily dollar volume over $2M; filing under 200 days old; TTM net income and FCF
-   positive; net margin at least 5% and P/S under 4x (financials skip both: bank revenue tags are unreliable); revenue per share up
+   positive; net margin at least 5% (financials skip it: bank revenue tags are unreliable); revenue per share up
    on TTM and 3-year; ROIC at least 10% (ROE for financials); margins not down more than 2pp;
    debt not up more than 25% of assets; net debt/EBITDA under 1.0; Piotroski at least 6; not a
    mortgage REIT. Financials skip FCF and leverage gates and are ranked on their own list.
-2. **Rank: implied return** = cash yield (mean of earnings yield and FCF yield) + growth (the lower
+2. **Rank: implied return** = cash yield (mean of earnings yield and owner FCF yield, where FCF is
+   after stock comp and counts for at most 2x earnings) + growth (the lower
    of TTM and 3-year revenue-per-share growth, clipped to 0 to 20%). It approximates an owner's
    annual return if the multiple never changes. Max 7 names per sector in the top 25.
 3. **Context columns** (not ranked): sector-percentile sub-scores (value, profitability, balance
@@ -51,7 +52,21 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
    an FCF-yield baseline and the equal-weight universe. Universe is today's members, so results
    carry survivorship bias.
 
-Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps`, `--ps-vs-sector`,
+## Chosen method and why (backtest 2017-02 to 2026-09, S&P 400 + 600)
+Default = gates above + implied return top 25, **no P/S gate**, rebalanced monthly.
+| Version (3-month hold) | CAGR | Sharpe | vs equal-weight universe |
+|---|---|---|---|
+| Implied return, no P/S gate (default) | 21.9% | 1.01 | +4.2%/yr, ahead in both halves |
+| Implied return, P/S under 4x | 19.9% | 0.94 | +2.2%/yr, behind 2017-21 |
+| P/S below sector median | 14.3% | 0.64 | -3.5%/yr |
+| + momentum gate / Bargain rank | 17.5% / 17.9% | 0.85 / 0.86 | ~0 |
+| Top 25 FCF yield (baseline) | 20.9% | 0.72 | max drawdown -60% |
+| Equal-weight universe / SPY | 17.8% / 15.0% | 0.85 / 0.97 | |
+Caveats: excess return is not statistically significant (t ~1); edge fades with holding period
+(+5%/yr at 1 month, ~0 at 12 months); rank IC ~0.01, so most value comes from the gates;
+survivorship bias inflates all absolute numbers.
+
+Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps` (optional ceiling), `--ps-vs-sector`,
 `--min-net-margin`, `--max-nd-ebitda`, `--min-adv`, `--include-foreign`, `--top`.
 
 ## XBRL handling worth knowing

@@ -15,7 +15,7 @@ MAX_MCAP = 5e9
 MIN_PRICE = 5.0
 MIN_ADV = 2e6           # median daily dollar volume; easy to trade at personal size
 FCF_CAP = 2.0           # in cash yield, FCF yield is capped at 2x earnings yield
-MAX_PS = 4.0            # hard ceiling on price / sales
+MAX_PS = None          # optional P/S ceiling; off by default (backtest 2026-10: ceiling cost ~2%/yr)            # hard ceiling on price / sales
 PS_VS_SECTOR = False    # optionally also below the median P/S of investable sector peers
 MIN_NET_MARGIN = 0.05   # net income / revenue
 US_ONLY = True          # US business address per SEC
@@ -47,7 +47,7 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     # A ceiling only: implied return already ranks cheapness, and a sector-median rule drops
     # high-margin names in mixed sectors (GNTX vs retailers). Bank "revenue" is too loosely
     # tagged for P/S or net margin to mean anything, so financials skip both.
-    f["price_to_sales"] = fin | (df["ps"] < MAX_PS)
+    f["price_to_sales"] = fin | (df["ps"] < MAX_PS) if MAX_PS else pd.Series(True, index=df.index)
     if PS_VS_SECTOR:
         peers = f[["mcap", "price", "liquidity", "fresh_data"]].all(axis=1)
         med = df["ps"].where(peers).groupby(df["sector"]).transform("median")

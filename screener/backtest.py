@@ -99,7 +99,7 @@ def stats(r: pd.Series, bench: pd.Series | None = None) -> dict:
 STRATEGIES = [
     "Implied return top 25",
     "Implied return + momentum gate",
-    "Implied return, no P/S rule",
+    "Implied return, P/S under 4x",
     "Implied return, P/S below sector median",
     "Bargain top 25",
     "Baseline: top 25 FCF yield",
@@ -143,7 +143,9 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
         inv = s[s["investable"] & ~s["is_financial"].astype(bool)]
         ok = inv[inv["passes"]]
         f = score.filters(x.loc[inv.index])
-        ok_nops = inv[f.drop(columns="price_to_sales").all(axis=1)]
+        prev, score.MAX_PS = score.MAX_PS, 4.0
+        ok_nops = inv[score.filters(x).loc[inv.index].all(axis=1)]
+        score.MAX_PS = prev
         prev, score.PS_VS_SECTOR = score.PS_VS_SECTOR, True
         ok_sec = inv[score.filters(x).loc[inv.index].all(axis=1)]
         score.PS_VS_SECTOR = prev
@@ -152,7 +154,7 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
         books["Implied return top 25"][d] = _ew(score.top_n(ok, "implied_return", TOP_N).index)
         books["Implied return + momentum gate"][d] = _ew(
             score.top_n(ok[ok["mom_12_1"] > mom_floor], "implied_return", TOP_N).index)
-        books["Implied return, no P/S rule"][d] = _ew(score.top_n(ok_nops, "implied_return", TOP_N).index)
+        books["Implied return, P/S under 4x"][d] = _ew(score.top_n(ok_nops, "implied_return", TOP_N).index)
         books["Implied return, P/S below sector median"][d] = _ew(
             score.top_n(ok_sec, "implied_return", TOP_N).index)
         books["Bargain top 25"][d] = _ew(score.top_n(ok, "bargain", TOP_N).index)

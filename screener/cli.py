@@ -142,7 +142,7 @@ def main(argv=None):
                             "fundamentals justify (sector-relative); blend: weighted scores")
         s.add_argument("--min-mcap", type=float, default=300e6)
         s.add_argument("--max-mcap", type=float, default=5e9)
-        s.add_argument("--max-ps", type=float, default=4.0, help="hard ceiling on price/sales")
+        s.add_argument("--max-ps", type=float, default=None, help="optional ceiling on price/sales")
         s.add_argument("--ps-vs-sector", action="store_true",
                        help="also require P/S below the sector median")
         s.add_argument("--min-net-margin", type=float, default=0.05)
