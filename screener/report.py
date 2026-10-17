@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import re
+import urllib.parse
 from pathlib import Path
 
 import pandas as pd
@@ -146,7 +147,9 @@ def _table(df: pd.DataFrame, tid: str, extra: str | None = None) -> str:
     scale = max(0.2, float(df["implied_return"].max())) if len(df) else 0.2
     rows = []
     for i, (t, r) in enumerate(df.iterrows(), 1):
-        cells = [f"<td class=k>{i}</td>", f"<td class=t>{html.escape(t)}</td>"]
+        url = f"https://finance.yahoo.com/quote/{urllib.parse.quote(str(t))}"
+        cells = [f"<td class=k>{i}</td>",
+                 f'<td class=t><a href="{url}" target=_blank rel=noopener>{html.escape(t)}</a></td>']
         for c, _, k in COLS:
             v = r.get(c)
             if c == "implied_return":
@@ -192,7 +195,8 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:28px 0 8px}p{color:var
 th,td{padding:6px 9px;text-align:right;white-space:nowrap}
 th{background:var(--head);position:sticky;top:0;cursor:pointer;font-weight:600;border-bottom:1px solid var(--line)}
 tbody tr:nth-child(even){background:var(--stripe)}tbody tr:hover{background:var(--hover)}
-td.t{font-weight:700;color:var(--acc);text-align:left}td.n,td.s{text-align:left}
+td.t{font-weight:700;text-align:left}td.t a{color:var(--acc);text-decoration:none}
+td.t a:hover{text-decoration:underline}td.t a::after{content:" ↗";font-size:10px;font-weight:400;color:var(--mut)}td.n,td.s{text-align:left}
 td.n{max-width:220px;overflow:hidden;text-overflow:ellipsis}td.s{color:var(--mut);white-space:normal;min-width:220px}
 td.b{font-weight:700;color:var(--fg)}td.up{color:var(--up)}td.dn{color:var(--dn)}
 td.s{font-size:12px;max-width:300px}
@@ -247,7 +251,7 @@ def write(scored: pd.DataFrame, out_dir: Path, top: int = 25, note: str = "") ->
 <style>{CSS}</style></head><body>
 <h1>Bargain screen · {d}</h1>
 <p>{len(core)} companies pass every gate, plus {len(fins)} financials ranked on their own list. Ranked by implied return.
-Universe: S&amp;P 600, 400, 500 and Nasdaq-100. Click any column header to sort. {html.escape(note)}</p>
+Universe: S&amp;P 600, 400, 500 and Nasdaq-100. Click a ticker to open it on Yahoo Finance, or any column header to sort. {html.escape(note)}</p>
 <details class=legend open><summary>How to read this report</summary><dl>
 <dt>Implied return</dt><dd><span class=formula>= Cash yield + Growth/sh.</span> Roughly what an owner earns per year if the
 valuation multiple never changes. Higher is cheaper for what you get. Bar:
