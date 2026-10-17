@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 sec_user_agent.txt
 reports/
+db/

@@ -36,7 +36,7 @@ def _xs(n=20):
     rng = np.random.default_rng(0)
     df = pd.DataFrame({
         "sector": ["A"] * n + ["B"] * n, "is_financial": False,
-        "mcap": 5e9, "price": 20.0, "adv_usd": 50e6, "data_age_days": 60,
+        "mcap": 2e9, "price": 20.0, "adv_usd": 50e6, "data_age_days": 60, "ps": 1.0, "net_margin": 0.1,
         "net_income": 1.0, "fcf": 1.0, "nd_ebitda": 0.5, "fscore": 7.0,
     }, index=[f"T{i}" for i in range(2 * n)])
     gates = {"rev_growth": 0.1, "rev_cagr_3y": 0.1, "rev_ps_growth": 0.1, "rev_ps_cagr_3y": 0.1,
@@ -48,6 +48,7 @@ def _xs(n=20):
     # Sector B is uniformly 10x "cheaper": sector-relative scores must not care.
     for c, x in gates.items():
         df[c] = x
+    df["ps"] = np.linspace(0.5, 1.5, 2 * n)  # T0-T9 cheaper than their sector's median
     value = S.BUCKETS["value"][0]
     df.loc[df["sector"] == "B", value] *= 10
     return df
@@ -80,7 +81,7 @@ def test_bargain_rewards_cheap_given_quality():
     # the worst-quality name is cheaper in absolute terms.
     n = 40
     q = np.linspace(0, 1, n)
-    df = pd.DataFrame({"sector": "A", "is_financial": False, "mcap": 5e9, "price": 20.0,
+    df = pd.DataFrame({"sector": "A", "is_financial": False, "mcap": 2e9, "price": 20.0, "ps": 1.0, "net_margin": 0.1,
                        "adv_usd": 50e6, "data_age_days": 60, "net_income": 1.0, "fcf": 1.0,
                        "nd_ebitda": 0.5, "fscore": 7.0}, index=[f"T{i}" for i in range(n)])
     df["roic"] = df["op_margin"] = df["fcf_conversion"] = q

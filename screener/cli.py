@@ -26,9 +26,13 @@ def cmd_universe(a):
 
 
 def cmd_fetch(a):
+    from . import store
+    if not config.EDGAR_CACHE.exists() or not any(config.EDGAR_CACHE.iterdir()):
+        store.pull()  # seed a fresh session from the shared db/
     uni = universe.build() if a.rebuild else universe.load()
     edgar.fetch_many(uni["cik"], refresh=a.refresh)
     prices.load(uni["ticker"].tolist(), refresh=a.refresh)
+    store.push()
     print("done")
 
 
@@ -57,6 +61,12 @@ REPORTS = config.ROOT / "reports"
 def _weights(a):
     from . import score
     score.RANK_BY = a.rank_by
+    for attr, arg in (("MIN_MCAP", "min_mcap"), ("MAX_MCAP", "max_mcap"), ("MAX_PS", "max_ps"),
+                      ("MIN_NET_MARGIN", "min_net_margin"), ("MAX_ND_EBITDA", "max_nd_ebitda"),
+                      ("MIN_ADV", "min_adv")):
+        setattr(score, attr, getattr(a, arg))
+    score.US_ONLY = not a.include_foreign
+    score.PS_VS_SECTOR = not a.ps_absolute
     return {"value": a.w_value, "growth": a.w_growth, "profitability": a.w_profitability,
             "balance_sheet": a.w_balance, "price_action": a.w_price}
 
@@ -70,6 +80,9 @@ def cmd_screen(a):
              + p[p["is_financial"].astype(bool)].head(10).index.tolist())
     s = yahoo_fill.crosscheck(s, shown)
     htm, csv = report.write(s, Path(a.out), top=a.top)
+    from . import store
+    store.save_screen(s, report.CSV_COLS)
+    store.push()
     p = s[s["passes"]]
     print(p[["sec_name", "sector", "pe", "pb", "fcf_yield", "rev_growth", "bargain", "implied_return"]]
           .head(a.top).to_string(float_format=lambda x: f"{x:.2f}"))
@@ -79,6 +92,8 @@ def cmd_screen(a):
 def cmd_backtest(a):
     from . import backtest, bt_report
     xs = backtest.build(start=a.start, reuse=not a.rebuild)
+    from . import store
+    store.push()
     res = backtest.run(xs, weights=_weights(a))
     print(res["table"].to_string(float_format=lambda x: f"{x:.3f}"))
     print(res["ic_summary"].to_string(float_format=lambda x: f"{x:.3f}"))
@@ -125,6 +140,15 @@ def main(argv=None):
                        default="implied_return",
                        help="implied_return: cash yield + growth; bargain: cheap vs. what "
                             "fundamentals justify (sector-relative); blend: weighted scores")
+        s.add_argument("--min-mcap", type=float, default=300e6)
+        s.add_argument("--max-mcap", type=float, default=5e9)
+        s.add_argument("--max-ps", type=float, default=4.0, help="hard ceiling on price/sales")
+        s.add_argument("--ps-absolute", action="store_true",
+                       help="drop the below-sector-median P/S rule; use only --max-ps")
+        s.add_argument("--min-net-margin", type=float, default=0.05)
+        s.add_argument("--max-nd-ebitda", type=float, default=1.0)
+        s.add_argument("--min-adv", type=float, default=2e6, help="min median daily $ volume")
+        s.add_argument("--include-foreign", action="store_true", help="allow non-US HQ")
         s.add_argument("--w-value", type=float, default=0.40)
         s.add_argument("--w-growth", type=float, default=0.25)
         s.add_argument("--w-profitability", type=float, default=0.20)

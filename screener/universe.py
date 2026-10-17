@@ -15,6 +15,8 @@ from . import config, http
 WIKI = {
     "SP500": "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
     "SP400": "https://en.wikipedia.org/wiki/List_of_S%26P_400_companies",
+    # Small caps: S&P's index has profitability and liquidity entry rules, unlike Russell 2000.
+    "SP600": "https://en.wikipedia.org/wiki/List_of_S%26P_600_companies",
     "NDX": "https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies",
 }
 SEC_TICKERS = "https://www.sec.gov/files/company_tickers_exchange.json"
@@ -90,6 +92,9 @@ def build(save: bool = True) -> pd.DataFrame:
         print(f"[universe] dropping {len(off)} not on NYSE/Nasdaq: {off['ticker'].tolist()[:15]}")
     uni = uni[uni["exchange"].isin(config.ALLOWED_EXCHANGES)].reset_index(drop=True)
 
+    uni["hq"] = [hq_location(c) for c in uni["cik"]]
+    uni["us_hq"] = uni["hq"].str.match(r"^[A-Z]{2}$") & ~uni["hq"].isin(_NON_US_CODES)
+
     if save:
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         uni.to_csv(config.UNIVERSE_FILE, index=False)
@@ -103,6 +108,26 @@ def build(save: bool = True) -> pd.DataFrame:
 SECTOR_OVERRIDES = {
     "FSLR": ("Industrials", "Electrical Components & Equipment"),
 }
+
+
+# EDGAR state codes that are US territories we don't count as "American company";
+# foreign addresses come back as EDGAR country codes (e.g. "L2" Ireland, "X0" UK), which
+# are letter+digit, so the 2-letter check below already excludes them.
+_NON_US_CODES = {"PR", "VI", "GU"}
+
+
+def hq_location(cik: int) -> str:
+    """Business-address state (US) or EDGAR country code, from SEC submissions. Cached."""
+    p = config.CACHE_DIR / "hq" / f"{int(cik)}.txt"
+    if p.exists():
+        return p.read_text()
+    js = http.get(f"https://data.sec.gov/submissions/CIK{int(cik):010d}.json",
+                  headers={"User-Agent": config.require_sec_agent()}, max_rps=config.SEC_MAX_RPS).json()
+    addr = js.get("addresses", {}).get("business", {}) or {}
+    loc = "FOREIGN" if addr.get("isForeignLocation") == 1 else (addr.get("stateOrCountry") or "")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(loc)
+    return loc
 
 
 def load() -> pd.DataFrame:

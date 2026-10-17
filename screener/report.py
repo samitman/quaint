@@ -12,12 +12,14 @@ COLS = [  # (column, header, format)
     ("sec_name", "Company", "s"), ("sector", "Sector", "s"), ("price", "Price", "$"),
     ("mcap", "Mkt cap", "B"), ("implied_return", "Implied return", "%b"),
     ("cash_yield", "= Cash yield", "%"), ("growth_rate", "+ Growth/sh", "%"), ("pe", "P/E", "x"),
+    ("ps", "P/S", "x"), ("net_margin", "Net mgn", "%"),
     ("return_on_capital", "ROIC/ROE", "%"), ("nd_ebitda", "ND/EBITDA", "x"),
     ("ret_1y", "1Y", "%"), ("off_high", "vs 52w hi", "%"), ("why", "Why it's here", "s"),
     ("flags", "Flags", "s"),
 ]
 CSV_COLS = ["rank", "ticker", "sec_name", "sector", "industry", "exchange", "price", "mcap",
-            "implied_return", "cash_yield", "growth_rate", "pe", "pb", "ev_ebit", "earnings_yield",
+            "implied_return", "cash_yield", "growth_rate", "pe", "ps", "net_margin", "pb", "ev_ebit",
+            "earnings_yield",
             "fcf_yield", "net_income", "fcf", "roic", "roe", "op_margin", "gross_margin",
             "fcf_conversion", "rev_growth", "rev_cagr_3y", "rev_ps_growth", "rev_ps_cagr_3y",
             "ni_growth", "margin_change", "nd_ebitda", "debt_equity", "total_debt", "debt_prev",
@@ -157,10 +159,12 @@ def write(scored: pd.DataFrame, out_dir: Path, top: int = 25, note: str = "") ->
 <h1>Bargain screen · {d}</h1>
 <p><b>Implied return</b> = cash yield (average of earnings and free-cash-flow yield) + revenue-per-share growth
 (the lower of the last 12 months and the 3-year rate, capped at {score.MAX_GROWTH:.0%}). Roughly what an owner earns
-per year if the valuation multiple never changes. Only companies passing every gate are ranked: profitable, FCF positive,
-revenue per share growing (1y and 3y), ROIC ≥ {score.MIN_RETURN_ON_CAPITAL:.0%}, margins not down more than
-{score.MAX_MARGIN_DROP * 100:.0f}pp, debt under control (net debt/EBITDA &lt; {score.MAX_ND_EBITDA}), Piotroski ≥ {score.MIN_FSCORE:.0f},
-market cap &gt; $2B, price &gt; $5, liquid. {len(core)} companies pass, plus {len(fins)} financials ranked separately
+per year if the valuation multiple never changes. Only companies passing every gate are ranked:
+US-headquartered, market cap ${score.MIN_MCAP / 1e9:g}B–${score.MAX_MCAP / 1e9:g}B, P/S below its sector median and under {score.MAX_PS:g},
+net margin ≥ {score.MIN_NET_MARGIN:.0%}, FCF positive, revenue per share growing (1y and 3y),
+ROIC ≥ {score.MIN_RETURN_ON_CAPITAL:.0%}, margins not down more than {score.MAX_MARGIN_DROP * 100:.0f}pp, debt under control
+(net debt/EBITDA &lt; {score.MAX_ND_EBITDA:g}), Piotroski ≥ {score.MIN_FSCORE:.0f}, price &gt; $5, median daily volume
+&gt; ${score.MIN_ADV / 1e6:g}M. Universe: S&amp;P 600, 400, 500 and Nasdaq-100. {len(core)} companies pass, plus {len(fins)} financials ranked separately
 (their earnings are levered). Flag <i>cyclical</i> = earnings may be at a cycle peak. Click any header to sort. {html.escape(note)}</p>
 <h2>Top {min(top, len(core))} picks (max {score.MAX_PER_SECTOR} per sector)</h2>{_table(score.top_n(core, "composite", top), "top")}
 <h2>Financials: top {min(10, len(fins))} (banks, insurers, lenders)</h2>{_table(fins.head(10), "fin")}

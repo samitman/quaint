@@ -34,12 +34,24 @@ def month_ends(idx: pd.DatetimeIndex, start: str) -> list[pd.Timestamp]:
 def build(start: str = "2017-02-01", reuse: bool = True, workers: int = 4) -> pd.DataFrame:
     if reuse and XS_CACHE.exists():
         return pd.read_pickle(XS_CACHE)
+    if reuse:
+        from . import store
+        store.pull()
+        xs = store.load_history()
+        if xs is not None:
+            xs.to_pickle(XS_CACHE)
+            return xs
     uni = universe.load().set_index("ticker")
     px = prices.load(uni.index.tolist())
+    # The screen is capped at $5B: large caps never qualify and aren't peers, so skip the
+    # S&P 500 / Nasdaq-100-only names (saves ~40% of the rebuild).
+    uni = uni[uni["index"].str.contains("SP600|SP400")]
     dates = month_ends(px["Close"].index, start)
     print(f"[backtest] {len(dates)} rebalance dates x {len(uni)} tickers")
     xs = screen.cross_sections(dates, uni, px, workers=workers)
     xs.to_pickle(XS_CACHE)
+    from . import store
+    store.save_history(xs)
     return xs
 
 
@@ -87,6 +99,7 @@ def stats(r: pd.Series, bench: pd.Series | None = None) -> dict:
 STRATEGIES = [
     "Implied return top 25",
     "Implied return + momentum gate",
+    "Implied return, no P/S rule",
     "Bargain top 25",
     "Baseline: top 25 FCF yield",
     "All gated names",
@@ -124,14 +137,18 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
         x = x.drop(columns=[c for c in ("ret_1m", "ret_ytd", "ret_1y", "off_high", "mom_12_1") if c in x])
         x = x.join(prices.performance(px, d))
         x["sector"] = uni["sector"].reindex(x.index).fillna(x["sector"])  # current overrides
+        x["us_hq"] = uni["us_hq"].reindex(x.index).fillna(False)
         s = score.score(x, weights, rank_by="implied_return")
         inv = s[s["investable"] & ~s["is_financial"].astype(bool)]
         ok = inv[inv["passes"]]
+        f = score.filters(x.loc[inv.index])
+        ok_nops = inv[f.drop(columns="price_to_sales").all(axis=1)]
         mom_floor = inv["mom_12_1"].quantile(MOM_CUT)
         counts.append({"date": d, "investable": len(inv), "passers": len(ok)})
         books["Implied return top 25"][d] = _ew(score.top_n(ok, "implied_return", TOP_N).index)
         books["Implied return + momentum gate"][d] = _ew(
             score.top_n(ok[ok["mom_12_1"] > mom_floor], "implied_return", TOP_N).index)
+        books["Implied return, no P/S rule"][d] = _ew(score.top_n(ok_nops, "implied_return", TOP_N).index)
         books["Bargain top 25"][d] = _ew(score.top_n(ok, "bargain", TOP_N).index)
         books["Baseline: top 25 FCF yield"][d] = _ew(inv.nlargest(TOP_N, "fcf_yield").index)
         books["All gated names"][d] = _ew(ok.index)

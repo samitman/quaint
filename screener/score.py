@@ -9,10 +9,16 @@ import numpy as np
 import pandas as pd
 
 # --- Step 2: hard filters --------------------------------------------------------------
-MIN_MCAP = 2e9
+# Sam's small-cap value profile (2026-10-17). All overridable from the CLI.
+MIN_MCAP = 300e6
+MAX_MCAP = 5e9
 MIN_PRICE = 5.0
-MIN_ADV = 10e6
-MAX_ND_EBITDA = 1.5
+MIN_ADV = 2e6           # median daily dollar volume; easy to trade at personal size
+MAX_PS = 4.0            # hard ceiling on price / sales
+PS_VS_SECTOR = True     # and below the median P/S of investable sector peers
+MIN_NET_MARGIN = 0.05   # net income / revenue
+US_ONLY = True          # US business address per SEC
+MAX_ND_EBITDA = 1.0
 MIN_FSCORE = 6.0
 MAX_DATA_AGE_DAYS = 200
 MAX_MARGIN_DROP = 0.02   # operating margin (ROE for financials) may slip at most 2pp y/y
@@ -29,7 +35,7 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     balance-sheet lenders) and are held to a profitability bar instead."""
     fin = df["is_financial"].astype(bool)
     f = pd.DataFrame(index=df.index)
-    f["mcap"] = df["mcap"] > MIN_MCAP
+    f["mcap"] = df["mcap"].between(MIN_MCAP, MAX_MCAP)
     f["price"] = df["price"] > MIN_PRICE
     f["liquidity"] = df["adv_usd"] > MIN_ADV
     f["fresh_data"] = df["data_age_days"] <= MAX_DATA_AGE_DAYS
@@ -37,6 +43,16 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     f["fcf_positive"] = fin | (df["fcf"] > 0)
     f["low_leverage"] = fin | (df["nd_ebitda"] < MAX_ND_EBITDA)
     f["fscore"] = df["fscore"] >= MIN_FSCORE
+    # P/S = P/E x net margin, so an absolute cutoff mostly picks industries; compare to
+    # sector peers instead, with a hard ceiling.
+    f["price_to_sales"] = df["ps"] < MAX_PS
+    if PS_VS_SECTOR:
+        peers = f[["mcap", "price", "liquidity", "fresh_data"]].all(axis=1)
+        med = df["ps"].where(peers).groupby(df["sector"]).transform("median")
+        f["price_to_sales"] &= df["ps"] < med
+    f["net_margin"] = df["net_margin"] >= MIN_NET_MARGIN
+    if US_ONLY and "us_hq" in df:
+        f["us_company"] = df["us_hq"].astype(bool)
     # Growth gates: a bargain must be a growing, improving business, not just a cheap one.
     # Three-year growth guards against one-year cyclical spikes (memory, commodities).
     # Per share, so growth bought by issuing stock doesn't count.

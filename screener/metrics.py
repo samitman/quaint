@@ -182,6 +182,8 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     m["ev_ebit"] = _div(ev, e) if e and e > 0 and ev and ev > 0 else None
     m["ebit_ev"] = _div(e, ev) if ev and ev > 0 else None
     m["pb"] = _div(mcap, equity) if equity and equity > 0 else None
+    m["ps"] = _div(mcap, rev) if rev and rev > 0 else None
+    m["net_margin"] = _div(ni, rev) if rev and rev > 0 else None
     m["book_yield"] = _div(equity, mcap)
     # Quality.
     invested = (equity or 0.0) + debt - cash

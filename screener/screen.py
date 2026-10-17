@@ -105,7 +105,7 @@ def run(as_of: pd.Timestamp | None = None, weights: dict | None = None) -> pd.Da
     d = pd.Timestamp(as_of) if as_of is not None else px["Close"].index[-1]
     df = cross_sections([d], uni, px, live=True)
     _fill_missing_shares(df)
-    df = df.join(uni[["sec_name", "index", "exchange"]], on="ticker")
+    df = df.join(uni[["sec_name", "index", "exchange", "us_hq"]], on="ticker")
     df = df.join(prices.performance(px, d), on="ticker")
     df.to_pickle(LATEST)  # unscored, so `lookup` can add a ticker and re-score
     return score.score(df.set_index("ticker"), weights).sort_values("composite", ascending=False)

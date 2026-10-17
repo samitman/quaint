@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 
 ROOT = Path(os.environ.get("SCREENER_HOME", Path(__file__).resolve().parent.parent))
-# Caches are large (~1k EDGAR files); point SCREENER_DATA at fast local disk if ROOT is a network mount.
-DATA_DIR = Path(os.environ.get("SCREENER_DATA", ROOT / "data"))
+# Working caches (~2GB) live on local disk, not the shared network folder; db/ is the durable copy (store.py).
+DATA_DIR = Path(os.environ.get("SCREENER_DATA", Path.home() / "screener-data"))
 CACHE_DIR = DATA_DIR / "cache"
 EDGAR_CACHE = CACHE_DIR / "edgar"
 PRICE_CACHE = CACHE_DIR / "prices"

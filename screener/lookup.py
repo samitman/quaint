@@ -63,6 +63,8 @@ def _external_row(ticker: str, latest: pd.DataFrame) -> pd.DataFrame:
              index="not in index", exchange=sec.loc[ticker, "exchange"] if "exchange" in sec else "")
     adv = (px["Close"][ticker] * px["Volume"][ticker]).rolling(63, min_periods=40).median()
     m["adv_usd"] = adv.asof(d)
+    hq = universe.hq_location(cik)
+    m["us_hq"] = bool(len(hq) == 2 and hq.isalpha() and hq not in universe._NON_US_CODES)
     m.update(prices.performance(px, d).loc[ticker].to_dict())
     row = pd.DataFrame([m])
     screen._fill_missing_shares(row)
