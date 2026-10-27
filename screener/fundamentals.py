@@ -99,6 +99,7 @@ _DEBT = {"lt_debt_noncurrent", "lt_debt_current", "lt_debt_total", "st_debt", "d
 _EMPTY = pd.Series(dtype=float, index=pd.DatetimeIndex([]))
 
 # Flows where a negative value would be a sign-convention error, not economics.
+_THREE_YEAR = {"operating_income", "pretax_income", "interest_expense", "net_income"}
 _POSITIVE_FLOWS = {"capex", "sbc", "acquisitions", "buybacks", "dividends", "dna", "diluted_shares", "interest_expense"}
 
 
@@ -286,12 +287,17 @@ def snapshot(cf: dict, as_of: date | None = None) -> Snapshot:
             prev = abs(prev) if prev is not None else None
         v[f"{name}_ttm"] = cur
         v[f"{name}_ttm_prev"] = prev
+        if name in _THREE_YEAR:  # profit three years back, so one bad year doesn't decide "growing"
+            old = ttm(q_series[name], a_series[name], anchor - pd.Timedelta(days=1090)) if anchor is not None else None
+            v[f"{name}_ttm_3y"] = abs(old) if old is not None and name in _POSITIVE_FLOWS else old
 
     for sfx in ("_ttm", "_ttm_prev"):
         if v[f"revenue{sfx}"] is None and v[f"net_interest_income{sfx}"] is not None:
             v[f"revenue{sfx}"] = v[f"net_interest_income{sfx}"] + (v[f"noninterest_income{sfx}"] or 0.0)
 
     v["diluted_shares"] = _latest_avg(q_series["diluted_shares"], a_series["diluted_shares"], anchor)
+    v["diluted_shares_3y"] = (_latest_avg(q_series["diluted_shares"], a_series["diluted_shares"],
+                                          anchor - pd.Timedelta(days=1090)) if anchor is not None else None)
     v["diluted_shares_prev"] = (_latest_avg(q_series["diluted_shares"], a_series["diluted_shares"],
                                             anchor - pd.Timedelta(days=355)) if anchor is not None else None)
 

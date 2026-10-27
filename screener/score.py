@@ -26,7 +26,7 @@ MAX_DATA_AGE_DAYS = 200
 MAX_MARGIN_DROP = 0.02   # operating margin (ROE for financials) may slip at most 2pp y/y
 MAX_DEBT_GROWTH = 0.25   # debt may grow at most 25% y/y unless near net cash
 MIN_RETURN_ON_CAPITAL = 0.10  # ROIC (ROE for financials)
-PROFITS_GROWING = True  # operating profit (net income for financials) above a year ago; see README
+PROFITS_GROWING = True  # profit per share above 3 years ago (operating; net income for financials)
 # Mortgage REITs run 6-10x leverage on rate bets and book mark-to-market swings as
 # earnings, so "P/E 5, 0.8x book" is their permanent state, not a bargain signal.
 EXCLUDED_INDUSTRIES = {"Mortgage REITs"}  # TTM must end within ~2 quarters of the screen date
@@ -69,12 +69,10 @@ def filters(df: pd.DataFrame) -> pd.DataFrame:
     f["quality"] = df["roic"].where(~fin, df.get("roe")) >= MIN_RETURN_ON_CAPITAL
     margin_trend = df["margin_change"].where(~fin, df.get("roe_change"))
     f["margins_holding"] = margin_trend > -MAX_MARGIN_DROP
-    # Healthy = growing profits, not just revenue. Operating profit, because net income swings
-    # on one-offs (tax credits, write-downs); op_now > op_prev <=> margin x (1 + rev growth) > prev margin.
+    # Healthy = profits growing over time: operating profit per share (net income for financials)
+    # above three years ago. One bad year in between doesn't fail it; see README.
     if PROFITS_GROWING:
-        op_up = df["op_margin"] * (1 + df["rev_growth"]) > df["op_margin_prev"]
-        ni_up = df["ni_growth"] > 0 if "ni_growth" in df else pd.Series(False, index=df.index)
-        f["profits_growing"] = op_up.where(~fin, ni_up)
+        f["profits_growing"] = df["profit_up_3y"] == True if "profit_up_3y" in df else False  # noqa: E712
     # Debt discipline: borrowing may rise only if the balance sheet is near net cash or
     # the increase is small relative to assets.
     f["debt_discipline"] = fin | (df["nd_ebitda"] < 0.5) | (df["debt_yoy"] <= MAX_DEBT_GROWTH) \

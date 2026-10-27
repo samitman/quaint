@@ -41,7 +41,7 @@ def _xs(n=20):
     }, index=[f"T{i}" for i in range(2 * n)])
     gates = {"rev_growth": 0.1, "rev_cagr_3y": 0.1, "rev_ps_growth": 0.1, "rev_ps_cagr_3y": 0.1,
              "roic": 0.2, "roe": 0.2, "margin_change": 0.0, "roe_change": 0.0,
-             "debt_yoy": 0.0, "debt_change": 0.0, "op_margin": 0.2, "op_margin_prev": 0.15}
+             "debt_yoy": 0.0, "debt_change": 0.0, "op_margin": 0.2, "op_margin_prev": 0.15, "profit_up_3y": True}
     cols = {c.lstrip("-") for a, b in S.BUCKETS.values() for c in a + b}
     for c in cols - {"nd_ebitda"}:
         df[c] = rng.normal(size=2 * n)
@@ -88,7 +88,7 @@ def test_bargain_rewards_cheap_given_quality():
     for c in ("rev_growth", "rev_cagr_3y", "rev_ps_growth", "rev_ps_cagr_3y", "margin_change",
               "debt_yoy", "debt_change"):
         df[c] = 0.05
-    df["op_margin_prev"] = q / 1.1
+    df["op_margin_prev"], df["profit_up_3y"] = q / 1.1, True
     df["earnings_yield"] = df["fcf_yield"] = df["ebit_ev"] = df["book_yield"] = 1 - q
     df.loc["T38", ["earnings_yield", "fcf_yield", "ebit_ev", "book_yield"]] = 0.9
     s = S.score(df)

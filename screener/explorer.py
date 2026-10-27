@@ -51,7 +51,7 @@ GATES = {  # filter column -> plain words (also used for near misses)
     "price_to_sales": "P/S ceiling", "net_margin": "net margin 5%+", "us_company": "US headquarters",
     "revenue_growing": "revenue per share growing", "quality": "ROIC 10%+", "margins_holding": "margins holding",
     "debt_discipline": "debt not ballooning", "business_model": "not a mortgage REIT", "fscore": "Piotroski floor",
-    "profits_growing": "operating profit growing",
+    "profits_growing": "profit per share up over 3 years",
 }
 
 
@@ -80,7 +80,7 @@ def _records(s: pd.DataFrame, news: dict, ciks: pd.Series) -> list[dict]:
             "rg3": "rev_cagr_3y", "nig": "ni_growth", "nd": "net_debt", "nde": "nd_ebitda",
             "cov": "interest_coverage", "fcf": "fcf", "fy": "fcf_yield", "ey": "earnings_yield", "r1y": "ret_1y",
             "off": "off_high", "ib": "ins_buyers", "ibu": "ins_buy_usd", "isu": "ins_sell_usd",
-            "inp": "ins_net_pct", "mg": "margin_change"}
+            "inp": "ins_net_pct", "mg": "margin_change", "pg3": "profit_ps_cagr_3y"}
     out = []
     for t, r in s.iterrows():
         rec = {"t": t, "n": report._name(r.get("sec_name") or t), "sec": r.get("sector") or "",
@@ -359,7 +359,8 @@ $("#sub").innerHTML = `Prices as of ${D.asof}. ${nPass} companies pass every gat
 const RANGES = [
   {k: "px", l: "Price", u: "$", s: 1}, {k: "mc", l: "Market cap", u: "$B", s: 1e9},
   {k: "ni", l: "Net income", u: "$M", s: 1e6}, {k: "rev", l: "Revenue", u: "$M", s: 1e6},
-  {k: "nig", l: "Net income growth", u: "%", s: .01}, {k: "rg", l: "Revenue growth", u: "%", s: .01},
+  {k: "pg3", l: "Profit/share growth, 3Y per yr", u: "%", s: .01}, {k: "nig", l: "Net income growth, 1Y", u: "%", s: .01},
+  {k: "rg", l: "Revenue growth", u: "%", s: .01},
   {k: "nm", l: "Net margin", u: "%", s: .01}, {k: "roic", l: "ROIC (ROE for banks)", u: "%", s: .01},
   {k: "pe", l: "P/E", u: "×", s: 1}, {k: "ps", l: "P/S", u: "×", s: 1},
   {k: "nde", l: "Net debt / EBITDA", u: "×", s: 1}, {k: "cov", l: "Interest coverage", u: "×", s: 1},
@@ -425,7 +426,7 @@ function buildControls() {
     a.oninput = on; b.oninput = on; rg.appendChild(d); }
   if (Object.keys(S.r).length) $("#more").open = true;
   const ax = {cy: "Cash yield", pe: "P/E", ps: "P/S", nde: "Net debt / EBITDA", mc: "Market cap (log)", r1y: "1-year price change", off: "Below 52-week high"};
-  const ay = {g: "Growth per share", nig: "Net income growth", rg: "Revenue growth", roic: "ROIC", nm: "Net margin", ir: "Implied return"};
+  const ay = {g: "Growth per share", pg3: "Profit/share growth, 3Y", nig: "Net income growth, 1Y", rg: "Revenue growth", roic: "ROIC", nm: "Net margin", ir: "Implied return"};
   $("#sx").innerHTML = Object.entries(ax).map(([k, l]) => `<option value="${k}" ${S.sx === k ? "selected" : ""}>${l}</option>`).join("");
   $("#sy").innerHTML = Object.entries(ay).map(([k, l]) => `<option value="${k}" ${S.sy === k ? "selected" : ""}>${l}</option>`).join("");
 }
@@ -449,7 +450,7 @@ function kpis(rows) {
     [rows.length, "companies shown"],
     [F.pct(median(rows.map(r => r.ir))), "median implied return"],
     [F.x(median(rows.map(r => r.pe))), "median P/E"],
-    [F.spct(median(rows.map(r => r.nig))), "median net income growth"],
+    [F.spct(median(rows.map(r => r.pg3))), "median profit/share growth, 3Y per yr"],
     [F.x(median(rows.map(r => r.nde))), "median net debt / EBITDA"],
     [rows.filter(r => isNum(r.nd) && r.nd <= 0).length, "with net cash"],
     [rows.filter(r => r.ib >= 1).length, "with insider buying (6M)"],
@@ -459,7 +460,7 @@ function kpis(rows) {
 
 // ---------- scatter ----------
 const AXF = {cy: F.pct, g: F.pct, nig: v => F.spct(v), rg: v => F.spct(v), roic: F.pct, nm: F.pct, ir: F.pct,
-  pe: v => F.x(v, 0), ps: v => F.x(v, 1), nde: v => F.x(v, 1), mc: F.usd, r1y: v => F.spct(v), off: v => F.pct(v, 0)};
+  pg3: v => F.spct(v), pe: v => F.x(v, 0), ps: v => F.x(v, 1), nde: v => F.x(v, 1), mc: F.usd, r1y: v => F.spct(v), off: v => F.pct(v, 0)};
 function cat(r) { return r.top ? 0 : r.pass ? 1 : 2; }
 const CATS = ["Top 25", "Passes all gates", "Fails a gate"];
 function scatter(rows) {
@@ -566,7 +567,8 @@ const COLS = [
   {k: "sec", l: "Sector", c: "l", f: v => `<span class="mut">${esc(v)}</span>`},
   {k: "px", l: "Price", f: F.px}, {k: "mc", l: "Mkt cap", f: F.usd},
   {k: "rev", l: "Revenue", f: F.usd, t: "Last 12 months"}, {k: "ni", l: "Net income", f: F.usd, t: "Last 12 months"},
-  {k: "nig", l: "NI growth", f: v => cls(v, v > 9.99 ? ">+999%" : F.spct(v)), t: "Net income vs a year earlier"},
+  {k: "pg3", l: "Profit/sh 3Y", f: v => cls(v, F.spct(v)), t: "Operating profit per share (net income for financials), growth per year over 3 years"},
+  {k: "nig", l: "NI growth 1Y", f: v => cls(v, v > 9.99 ? ">+999%" : F.spct(v)), t: "Net income vs a year earlier"},
   {k: "ir", l: "Implied return", f: (v, r) => irCell(r), t: "Cash yield + growth per share"},
   {k: "cy", l: "Cash yield", f: F.pct}, {k: "g", l: "Growth/sh", f: F.pct},
   {k: "pe", l: "P/E", f: v => F.x(v, 1)}, {k: "nm", l: "Net mgn", f: F.pct}, {k: "roic", l: "ROIC", f: v => F.pct(v, 0), t: "ROE for financials"},
@@ -597,7 +599,7 @@ function table(rows) {
 function openDetail(t) {
   const r = ROWS.find(x => x.t === t); if (!r) return; SEL = t; const dr = $("#drawer");
   const m = [["Price", F.px(r.px)], ["Market cap", F.usd(r.mc)], ["Revenue (12M)", F.usd(r.rev)], ["Net income (12M)", F.usd(r.ni)],
-    ["Net income growth", F.spct(r.nig)], ["Revenue growth", F.spct(r.rg)], ["Revenue growth, 3Y/yr", F.spct(r.rg3)], ["Net margin", F.pct(r.nm)],
+    ["Profit/share, 3Y per yr", F.spct(r.pg3)], ["Net income growth, 1Y", F.spct(r.nig)], ["Revenue growth", F.spct(r.rg)], ["Revenue growth, 3Y/yr", F.spct(r.rg3)], ["Net margin", F.pct(r.nm)],
     ["Implied return", F.pct(r.ir)], ["Cash yield", F.pct(r.cy)], ["Growth/sh (used)", F.pct(r.g)], ["P/E", F.x(r.pe)],
     ["P/S", F.x(r.ps)], [r.fin ? "ROE" : "ROIC", F.pct(r.roic)], ["Free cash flow", F.usd(r.fcf)], ["Net debt", isNum(r.nd) && r.nd <= 0 ? F.usd(-r.nd) + " net cash" : F.usd(r.nd)],
     ["Net debt / EBITDA", F.x(r.nde)], ["Interest coverage", isNum(r.cov) ? F.x(r.cov, 0) : "none reported"], ["Margin change", isNum(r.mg) ? (r.mg * 100 > 0 ? "+" : "") + (r.mg * 100).toFixed(1) + " pts" : "–"],
@@ -715,7 +717,7 @@ function method() {
   <h2>What a company must pass</h2><dl>
   <dt>Size and trading</dt><dd>US headquarters, market cap $${s.min_mcap / 1e9}B to $${s.max_mcap / 1e9}B, price over $5, over $2M traded a day, latest filing under 200 days old.</dd>
   <dt>Profitable</dt><dd>Net income and free cash flow (after stock-based pay) positive over the last 12 months; net margin at least ${s.min_nm * 100}%; ROIC at least ${s.min_roic * 100}%.</dd>
-  <dt>Growing</dt><dd>Revenue per share up over the last 12 months and over 3 years; operating profit above a year ago (net income for financials); operating margin not down more than 2 points.</dd>
+  <dt>Growing</dt><dd>Revenue per share up over the last 12 months and over 3 years; operating profit per share above 3 years ago, so one bad year doesn't fail it (net income for financials); operating margin not down more than 2 points.</dd>
   <dt>Debt managed</dt><dd>Net debt under ${s.max_nde}× EBITDA; debt not up more than 25% in a year unless near net cash.</dd>
   <dt>Clean record</dt><dd>No restatement or bankruptcy 8-K in the last year; no mortgage REITs. Financials skip the cash-flow, margin and debt tests and are ranked on their own list.</dd>
   </dl><h2>How the rank works</h2><dl>

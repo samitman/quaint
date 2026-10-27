@@ -111,6 +111,7 @@ STRATEGIES = [
     "Implied return + insider tilt",
     "Gated, insiders bought (6M)",
     "Insider cluster buys (any investable)",
+    "Profit rule: up vs 1 year ago (instead of 3)",
     "Healthy: net income growing",
     "Healthy: ND/EBITDA under 0.5",
     "Healthy: net cash only",
@@ -214,6 +215,10 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
             "Healthy: NI growing + ND/EBITDA under 0.5": (ok["ni_growth"] > 0) & (ok["nd_ebitda"] < 0.5),
             "Size: small caps only ($0.3-2B)": ok["mcap"] < 2e9,
         }
+        base = inv[fa.drop(columns="profits_growing", errors="ignore").all(axis=1)]
+        op1 = base["op_margin"] * (1 + base["rev_growth"]) > base["op_margin_prev"]
+        books["Profit rule: up vs 1 year ago (instead of 3)"][d] = _ew(
+            score.top_n(base[op1.fillna(False)], "implied_return", TOP_N).index)
         for k, m in healthy.items():
             books[k][d] = _ew(score.top_n(ok[m.fillna(False)], "implied_return", TOP_N).index)
         prev, score.MAX_MCAP = score.MAX_MCAP, 10e9

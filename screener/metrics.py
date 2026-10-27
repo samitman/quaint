@@ -215,6 +215,25 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     m["ni_growth"] = _growth(ni, ni_p)
     m["margin_change"] = (m["op_margin"] - m["op_margin_prev"]
                           if m["op_margin"] is not None and m["op_margin_prev"] is not None else None)
+    # Profit per share now vs three years ago (operating profit; net income for financials).
+    # A bad year in between doesn't matter, only the trend. Turning a loss into a profit counts.
+    sh3 = v.get("diluted_shares_3y")
+    if sh_now and sh3 and splits is not None and v.get("period_end") is not None:
+        # A split since then may or may not be restated in the filings; take whichever reading
+        # implies the smaller share change.
+        from .prices import split_factor_after
+        pe = pd.Timestamp(v["period_end"])
+        k = split_factor_after(splits, pe - pd.Timedelta(days=1090)) / split_factor_after(splits, pe)
+        if k and abs(math.log(sh_now / (sh3 * k))) < abs(math.log(sh_now / sh3)):
+            sh3 *= k
+    ok3 = sh_now and sh3 and 0.5 < sh_now / sh3 < 2.0
+    p_now, p_3y = (ni, v.get("net_income_ttm_3y")) if sector == FINANCIALS else (e, ebit(v, "_3y"))
+    if ok3 and p_now is not None and p_3y is not None:
+        a, b = p_now / sh_now, p_3y / sh3
+        m["profit_up_3y"] = bool(a > 0 and a > b)
+        m["profit_ps_cagr_3y"] = (a / b) ** (1 / 3) - 1 if a > 0 and b > 0 else None
+    else:
+        m["profit_up_3y"], m["profit_ps_cagr_3y"] = None, None
     roe_p = _div(ni_p, v.get("equity_prev")) if v.get("equity_prev") else None
     m["roe_change"] = m["roe"] - roe_p if m["roe"] is not None and roe_p is not None else None
     # Balance sheet.
