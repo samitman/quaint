@@ -80,7 +80,7 @@ def _records(s: pd.DataFrame, news: dict, ciks: pd.Series) -> list[dict]:
             "rg3": "rev_cagr_3y", "nig": "ni_growth", "nd": "net_debt", "nde": "nd_ebitda",
             "cov": "interest_coverage", "fcf": "fcf", "fy": "fcf_yield", "ey": "earnings_yield", "r1y": "ret_1y",
             "off": "off_high", "ib": "ins_buyers", "ibu": "ins_buy_usd", "isu": "ins_sell_usd",
-            "inp": "ins_net_pct", "mg": "margin_change", "pg3": "profit_ps_cagr_3y"}
+            "inp": "ins_net_pct", "mg": "margin_change", "pg3": "profit_ps_cagr_3y", "nip": "ni_prev", "nin": "net_income_norm"}
     out = []
     for t, r in s.iterrows():
         rec = {"t": t, "n": report._name(r.get("sec_name") or t), "sec": r.get("sector") or "",
@@ -383,7 +383,7 @@ let S = JSON.parse(JSON.stringify(DEF));
 try { const h = decodeURIComponent(location.hash.slice(1)); if (h.startsWith("{")) S = Object.assign(S, JSON.parse(h)); } catch (e) {}
 const save = () => { try { history.replaceState(null, "", "#" + encodeURIComponent(JSON.stringify(S))); } catch (e) {} };
 
-const isWarn = f => /FCF|CHECK|cyclical|auditor|listing|impairment|RED FLAG/.test(f);
+const isWarn = f => /FCF|CHECK|cyclical|tax benefit|auditor|listing|impairment|RED FLAG/.test(f);
 const flagCls = f => /RED FLAG/.test(f) ? "bad" : /insider cluster/.test(f) ? "good" : isWarn(f) ? "warn" : "";
 
 function base(r) {
@@ -568,7 +568,7 @@ const COLS = [
   {k: "px", l: "Price", f: F.px}, {k: "mc", l: "Mkt cap", f: F.usd},
   {k: "rev", l: "Revenue", f: F.usd, t: "Last 12 months"}, {k: "ni", l: "Net income", f: F.usd, t: "Last 12 months"},
   {k: "pg3", l: "Profit/sh 3Y", f: v => cls(v, F.spct(v)), t: "Operating profit per share (net income for financials), growth per year over 3 years"},
-  {k: "nig", l: "NI growth 1Y", f: v => cls(v, v > 9.99 ? ">+999%" : F.spct(v)), t: "Net income vs a year earlier"},
+  {k: "nig", l: "NI growth 1Y", f: (v, r) => niG(r), t: "Net income vs a year earlier. Percentages off a loss or a tiny base are not meaningful."},
   {k: "ir", l: "Implied return", f: (v, r) => irCell(r), t: "Cash yield + growth per share"},
   {k: "cy", l: "Cash yield", f: F.pct}, {k: "g", l: "Growth/sh", f: F.pct},
   {k: "pe", l: "P/E", f: v => F.x(v, 1)}, {k: "nm", l: "Net mgn", f: F.pct}, {k: "roic", l: "ROIC", f: v => F.pct(v, 0), t: "ROE for financials"},
@@ -578,6 +578,7 @@ const COLS = [
   {k: "ibu", l: "Insiders 6M", f: (v, r) => insCell(r), t: "Open-market buys by officers and directors (SEC Form 4)"},
   {k: "flags", l: "Flags", c: "l", f: (v, r) => (r.pass ? "" : `<span class="pill">fails ${esc(r.failed.map(gname).join(", "))}</span>`) + v.map(x => `<span class="pill ${flagCls(x)}">${esc(x)}</span>`).join(""), sort: r => r.flags.length},
 ];
+const niG = r => isNum(r.nip) && r.nip <= 0 && isNum(r.ni) ? `<span class="mut">from a loss</span>` : isNum(r.nig) && r.nig > 5 ? cls(1, ">+500%") : cls(r.nig, F.spct(r.nig));
 const cls = (v, s) => isNum(v) ? `<span class="${v > 0 ? "pos" : v < 0 ? "neg" : ""}">${s}</span>` : s;
 function irCell(r) { if (!isNum(r.ir)) return "–"; const sc = .4, a = Math.max(0, Math.min(r.cy ?? 0, sc)), b = Math.max(0, Math.min(r.g ?? 0, sc - a));
   return `<span class="irbar"><span class="b"><i style="width:${a / sc * 100}%;background:var(--s1)"></i><i style="width:${b / sc * 100}%;background:var(--s1b)"></i></span><b>${F.pct(r.ir)}</b></span>`; }
@@ -599,7 +600,7 @@ function table(rows) {
 function openDetail(t) {
   const r = ROWS.find(x => x.t === t); if (!r) return; SEL = t; const dr = $("#drawer");
   const m = [["Price", F.px(r.px)], ["Market cap", F.usd(r.mc)], ["Revenue (12M)", F.usd(r.rev)], ["Net income (12M)", F.usd(r.ni)],
-    ["Profit/share, 3Y per yr", F.spct(r.pg3)], ["Net income growth, 1Y", F.spct(r.nig)], ["Revenue growth", F.spct(r.rg)], ["Revenue growth, 3Y/yr", F.spct(r.rg3)], ["Net margin", F.pct(r.nm)],
+    ["Profit/share, 3Y per yr", F.spct(r.pg3)], ["Net income growth, 1Y", niG(r)], ...(isNum(r.nin) && r.nin !== r.ni ? [["Net income at 21% tax", F.usd(r.nin)]] : []), ["Revenue growth", F.spct(r.rg)], ["Revenue growth, 3Y/yr", F.spct(r.rg3)], ["Net margin", F.pct(r.nm)],
     ["Implied return", F.pct(r.ir)], ["Cash yield", F.pct(r.cy)], ["Growth/sh (used)", F.pct(r.g)], ["P/E", F.x(r.pe)],
     ["P/S", F.x(r.ps)], [r.fin ? "ROE" : "ROIC", F.pct(r.roic)], ["Free cash flow", F.usd(r.fcf)], ["Net debt", isNum(r.nd) && r.nd <= 0 ? F.usd(-r.nd) + " net cash" : F.usd(r.nd)],
     ["Net debt / EBITDA", F.x(r.nde)], ["Interest coverage", isNum(r.cov) ? F.x(r.cov, 0) : "none reported"], ["Margin change", isNum(r.mg) ? (r.mg * 100 > 0 ? "+" : "") + (r.mg * 100).toFixed(1) + " pts" : "–"],
@@ -645,10 +646,10 @@ function stats(r, b) {
     o.excess = o.cagr - (bb.reduce((a, v) => a * (1 + v), 1) ** (12 / n) - 1); o.t = me / se * Math.sqrt(n); o.hit = ex.filter(v => v > 0).length / n; }
   return o;
 }
-const group = k => k === DEFAULT ? "Default" : /^(Healthy|Size):/.test(k) ? "Healthy balance sheet and size (tested 2026-10-27)" :
+const group = k => k === DEFAULT ? "Default" : /^(Healthy|Size|Profit rule):/.test(k) ? "Healthy balance sheet, profit growth and size (tested 2026-10-27)" :
   k.startsWith("Without ") ? "Default with one gate removed" : /^Q\d$/.test(k) ? "Implied return quintiles (all investable)" :
   [BENCH, "SPY", "Baseline: top 25 FCF yield", "All gated names"].includes(k) ? "Benchmarks" : "Other variants tested";
-const GORDER = ["Default", "Healthy balance sheet and size (tested 2026-10-27)", "Benchmarks", "Other variants tested", "Default with one gate removed", "Implied return quintiles (all investable)"];
+const GORDER = ["Default", "Healthy balance sheet, profit growth and size (tested 2026-10-27)", "Benchmarks", "Other variants tested", "Default with one gate removed", "Implied return quintiles (all investable)"];
 const label = k => k === DEFAULT ? "Default: implied return top 25" : k.startsWith("Without ") ? "Without " + gname(k.slice(8)) : /^Q\d$/.test(k) ? `Quintile ${k[1]}${k === "Q5" ? " (cheapest)" : k === "Q1" ? " (dearest)" : ""}` : k;
 function btRender() {
   if (!D.bt) { $("#tab-bt").innerHTML = `<div class="card">No backtest results found next to this file. Run <code>python3 -m screener backtest</code>.</div>`; return; }
@@ -717,7 +718,7 @@ function method() {
   <h2>What a company must pass</h2><dl>
   <dt>Size and trading</dt><dd>US headquarters, market cap $${s.min_mcap / 1e9}B to $${s.max_mcap / 1e9}B, price over $5, over $2M traded a day, latest filing under 200 days old.</dd>
   <dt>Profitable</dt><dd>Net income and free cash flow (after stock-based pay) positive over the last 12 months; net margin at least ${s.min_nm * 100}%; ROIC at least ${s.min_roic * 100}%.</dd>
-  <dt>Growing</dt><dd>Revenue per share up over the last 12 months and over 3 years; operating profit per share above 3 years ago, so one bad year doesn't fail it (net income for financials); operating margin not down more than 2 points.</dd>
+  <dt>Growing</dt><dd>Revenue per share up over the last 12 months and over 3 years; operating margin not down more than 2 points. Together these mean profits grow with sales. The 3-year profit-per-share trend is shown as a column and filter, not a gate (it cost return in the backtest).</dd>
   <dt>Debt managed</dt><dd>Net debt under ${s.max_nde}× EBITDA; debt not up more than 25% in a year unless near net cash.</dd>
   <dt>Clean record</dt><dd>No restatement or bankruptcy 8-K in the last year; no mortgage REITs. Financials skip the cash-flow, margin and debt tests and are ranked on their own list.</dd>
   </dl><h2>How the rank works</h2><dl>

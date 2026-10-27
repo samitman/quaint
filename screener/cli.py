@@ -68,7 +68,7 @@ def _weights(a):
         setattr(score, attr, getattr(a, arg))
     score.US_ONLY = not a.include_foreign
     score.PS_VS_SECTOR = a.ps_vs_sector
-    score.PROFITS_GROWING = not a.no_profit_growth
+    score.PROFITS_GROWING = a.profit_growth
     return {"value": a.w_value, "growth": a.w_growth, "profitability": a.w_profitability,
             "balance_sheet": a.w_balance, "price_action": a.w_price}
 
@@ -87,6 +87,8 @@ def cmd_screen(a):
     htm, csv = report.write(s, Path(a.out), top=a.top, news=news)
     from . import explorer
     print(explorer.write(s, Path(a.out), news=news))
+    from . import appdata
+    print(appdata.build(s, news))
     from . import store
     store.save_screen(s, report.CSV_COLS)
     store.push()
@@ -116,6 +118,13 @@ def cmd_explorer(a):
     uni_name = s["sec_name"] if "sec_name" in s else pd.Series(dtype=str)
     news = {t: events.headlines(str(uni_name.get(t, t)), t) for t in score.top_n(core, "composite", a.top).index}
     print(explorer.write(s, Path(a.out), news=news))
+
+
+def cmd_app(a):
+    from . import server
+    if a.build:
+        print(server.build_from_latest())
+    server.serve(a.port, open_browser=not a.no_browser)
 
 
 def cmd_lookup(a):
@@ -149,6 +158,10 @@ def main(argv=None):
     s = sub.add_parser("check"); s.set_defaults(fn=cmd_check)
     s.add_argument("tickers", nargs="+")
     s.add_argument("--as-of", type=pd.Timestamp, default=None)
+    s = sub.add_parser("app", help="run the research app locally"); s.set_defaults(fn=cmd_app)
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--build", action="store_true", help="rebuild app data from the last screen first")
+    s.add_argument("--no-browser", action="store_true")
     for name, fn in (("screen", cmd_screen), ("backtest", cmd_backtest), ("audit", cmd_audit),
                      ("lookup", cmd_lookup), ("explorer", cmd_explorer)):
         s = sub.add_parser(name); s.set_defaults(fn=fn)
@@ -174,8 +187,8 @@ def main(argv=None):
         s.add_argument("--w-balance", type=float, default=0.15)
         s.add_argument("--w-price", type=float, default=0.0)
         s.add_argument("--out", default=str(REPORTS))
-        s.add_argument("--no-profit-growth", action="store_true",
-                       help="drop the operating-profit-growing gate")
+        s.add_argument("--profit-growth", action="store_true",
+                       help="require profit per share above 3 years ago (optional gate)")
         if name in ("screen", "explorer"):
             s.add_argument("--top", type=int, default=25)
         if name == "screen":

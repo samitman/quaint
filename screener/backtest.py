@@ -111,7 +111,9 @@ STRATEGIES = [
     "Implied return + insider tilt",
     "Gated, insiders bought (6M)",
     "Insider cluster buys (any investable)",
-    "Profit rule: up vs 1 year ago (instead of 3)",
+    "Earnings at normal tax rate",
+    "Profit rule: up vs 3 years ago",
+    "Profit rule: up vs 1 year ago",
     "Healthy: net income growing",
     "Healthy: ND/EBITDA under 0.5",
     "Healthy: net cash only",
@@ -217,8 +219,15 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
         }
         base = inv[fa.drop(columns="profits_growing", errors="ignore").all(axis=1)]
         op1 = base["op_margin"] * (1 + base["rev_growth"]) > base["op_margin_prev"]
-        books["Profit rule: up vs 1 year ago (instead of 3)"][d] = _ew(
+        books["Profit rule: up vs 1 year ago"][d] = _ew(
             score.top_n(base[op1.fillna(False)], "implied_return", TOP_N).index)
+        prev, score.NORMALIZE_TAX = score.NORMALIZE_TAX, True
+        sn = score.score(x, weights, rank_by="implied_return")
+        score.NORMALIZE_TAX = prev
+        okn = sn[sn["investable"] & sn["passes"] & ~sn["is_financial"].astype(bool)]
+        books["Earnings at normal tax rate"][d] = _ew(score.top_n(okn, "implied_return", TOP_N).index)
+        books["Profit rule: up vs 3 years ago"][d] = _ew(
+            score.top_n(base[base["profit_up_3y"] == True], "implied_return", TOP_N).index)  # noqa: E712
         for k, m in healthy.items():
             books[k][d] = _ew(score.top_n(ok[m.fillna(False)], "implied_return", TOP_N).index)
         prev, score.MAX_MCAP = score.MAX_MCAP, 10e9

@@ -26,7 +26,8 @@ MAX_DATA_AGE_DAYS = 200
 MAX_MARGIN_DROP = 0.02   # operating margin (ROE for financials) may slip at most 2pp y/y
 MAX_DEBT_GROWTH = 0.25   # debt may grow at most 25% y/y unless near net cash
 MIN_RETURN_ON_CAPITAL = 0.10  # ROIC (ROE for financials)
-PROFITS_GROWING = True  # profit per share above 3 years ago (operating; net income for financials)
+NORMALIZE_TAX = False  # value tax-benefit years on pretax profit at 21%; under test 2026-10-27
+PROFITS_GROWING = False  # optional: profit per share above 3 years ago; off by default (backtest cost, see README)
 # Mortgage REITs run 6-10x leverage on rate bets and book mark-to-market swings as
 # earnings, so "P/E 5, 0.8x book" is their permanent state, not a bargain signal.
 EXCLUDED_INDUSTRIES = {"Mortgage REITs"}  # TTM must end within ~2 quarters of the screen date
@@ -191,7 +192,7 @@ def cash_yield(df: pd.DataFrame) -> pd.Series:
     fin = df["is_financial"].astype(bool)
     # FCF can't count for more than FCF_CAP x earnings: a big gap is usually cash spent on
     # acquisitions (outside capex), working-capital swings or one-offs, not lasting yield.
-    ey = df["earnings_yield"]
+    ey = df["earnings_yield_norm"] if NORMALIZE_TAX and "earnings_yield_norm" in df else df["earnings_yield"]
     fy = df["fcf_yield"].clip(upper=FCF_CAP * ey.clip(lower=0))
     return pd.concat([ey, fy.where(~fin)], axis=1).mean(axis=1)
 

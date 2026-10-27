@@ -4,3 +4,4 @@ __pycache__/
 sec_user_agent.txt
 reports/
 db/
+web/explorer.html

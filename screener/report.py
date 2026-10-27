@@ -90,6 +90,8 @@ def _flags(r) -> str:
         out.append("insider cluster buy")
     for k in ("warnings", "events"):
         out += [e for e in str(r.get(k) or "").split(", ") if e]
+    if r.get("tax_normalized"):
+        out.append("one-off tax benefit")
     if r.get("cyclical"):
         out.append("cyclical")
     if r.get("debt_estimated"):
@@ -130,7 +132,7 @@ def _ins_cell(r) -> str:
 
 SECTOR_SHORT = {"Communication Services": "Comm. Services", "Consumer Discretionary": "Cons. Discretionary",
                 "Information Technology": "Info. Tech", "Consumer Staples": "Cons. Staples"}
-_WARN = ("FCF", "CHECK", "cyclical", "auditor change", "listing notice", "impairment")  # look before buying
+_WARN = ("FCF", "CHECK", "cyclical", "tax benefit", "auditor change", "listing notice", "impairment")  # look before buying
 _GOOD = ("insider cluster buy",)
 _BAD = ("RED FLAG",)
 

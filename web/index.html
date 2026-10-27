@@ -1,0 +1,25 @@
+<title>Quant Desk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="app.css">
+<header class="bar">
+  <div class="bar-in">
+    <a class="brand" href="#">Quant<span>Desk</span></a>
+    <div class="search" role="combobox" aria-expanded="false" aria-owns="sugg">
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search a ticker or company  ( / )" aria-label="Search tickers">
+      <ul id="sugg" class="sugg" role="listbox" hidden></ul>
+    </div>
+    <nav class="nav">
+      <a href="#" data-nav="home">Home</a>
+      <a href="#screen" data-nav="screen">Screen</a>
+      <a href="#compare" data-nav="compare">Compare</a>
+      <a href="explorer.html" target="_blank" rel="noopener">Backtest ↗</a>
+      <button id="theme" class="ghost" title="Light / dark" aria-label="Switch theme">◐</button>
+    </nav>
+  </div>
+</header>
+<main id="view" class="wrap" aria-live="polite"></main>
+<footer class="wrap foot" id="foot"></footer>
+<div id="tip" class="tip" role="tooltip"></div>
+<script src="app.js"></script>

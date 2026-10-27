@@ -39,6 +39,18 @@ valuation map, distribution and sector charts, a sortable table with Yahoo/SEC/F
 headlines, and the backtest (growth of $1, drawdowns, every variant). The filter state lives in the URL, so a view can
 be bookmarked. `python3 -m screener explorer` rebuilds it from the last screen without fetching prices.
 
+## Quant Desk (research app)
+`web/` is a small research app over our own data: ticker search, a page per company (price with 50/200-day averages
+and insider trades, key numbers, revenue/profit/margin/valuation/per-share/cash-and-debt charts, 11 years of quarterly
+financials), side-by-side compare of up to four tickers, and the screen with filters. `screen` exports its data to
+`web/data/` (`index.json` plus one chunk per first letter; gitignored, ~35MB).
+- `python3 -m screener app` serves it at http://localhost:8765. Live mode also looks up any SEC-registered ticker
+  outside the universe (pulled, scored and cached a day) and fetches headlines. `app --build` re-exports the data
+  from the last screen first.
+- The hosted copy is a private claude.ai artifact published from the same files; it only covers the universe and
+  refreshes when the files are republished after a screen.
+- Valuation history uses each quarter's TTM figures against the price 45 days after quarter end (filing lag).
+
 ## Where data lives
 Working caches sit on local disk (`~/screener-data`, override with `SCREENER_DATA`), because the
 shared folder is a network mount and ~1,500 small files are slow there. `db/` in this folder is the
@@ -62,7 +74,7 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
 1. **Gates** (all must pass; missing data fails): US headquarters; market cap $0.3B to $5B; price
    over $5; median daily dollar volume over $2M; filing under 200 days old; TTM net income and FCF
    positive; net margin at least 5% (financials skip it: bank revenue tags are unreliable); revenue per share up
-   on TTM and 3-year; operating profit per share above 3 years ago (net income for financials; a bad year in between is fine); ROIC at least 10% (ROE for financials); margins not down more than 2pp;
+   on TTM and 3-year; ROIC at least 10% (ROE for financials); margins not down more than 2pp;
    debt not up more than 25% of assets; net debt/EBITDA under 1.0; not a
    mortgage REIT; no restatement (8-K item 4.02) or bankruptcy (1.03) filed in the last year. Financials skip FCF and leverage gates and are ranked on their own list.
 2. **Rank: implied return** = cash yield (mean of earnings yield and owner FCF yield, where FCF is
@@ -109,22 +121,22 @@ Sam then asked for growth judged over time, not one year vs the last ("companies
 profit gate is: operating profit per share above 3 years ago (net income for financials); a dip in between is fine.
 | Variant, CAGR (vs universe) | 1-month hold | 3-month hold | 12-month hold |
 |---|---|---|---|
-| **Default with 3-year profit rule** | 20.5% (+2.3) | 20.3% (+2.3) | 18.9% (+1.9) |
+| With 3-year profit rule | 20.5% (+2.3) | 20.3% (+2.3) | 18.9% (+1.9) |
 | Profit rule vs 1 year ago instead | 23.4% (+5.2) | 21.0% (+3.0) | 19.1% (+2.0) |
-| No profit gate (revenue/share growth + margins holding only) | 24.8% (+6.6) | 21.4% (+3.4) | 19.4% (+2.3) |
+| **Default: no profit gate (revenue/share growth + margins holding)** | 24.8% (+6.6) | 21.4% (+3.4) | 19.4% (+2.3) |
 | Small caps only ($0.3-2B), with 3-year rule | 22.5% (+4.3) | 23.8% (+5.9) | 21.3% (+4.2) |
 | Cap up to $10B | 17.3% (-0.9) | 18.4% (+0.4) | 17.5% (+0.4) |
 Read: no form of profit-growth gate adds return over 2017-2026; the 3-year rule costs ~1%/yr at a 3-month hold and
 ~4%/yr at 1 month (both halves). Revenue per share growing plus margins holding already implies profits growing,
 so the explicit gate mostly removes cheap companies recovering from a dip. On 2021-2026 alone (first window with
-3-year history in the quick test) the 3-year rule beat the 1-year rule. Kept as a thesis gate pending Sam;
-`--no-profit-growth` turns it off. Also tested: net income growing (worse), ND/EBITDA < 0.5 and net cash only
+3-year history in the quick test) the 3-year rule beat the 1-year rule. Sam chose (2026-10-27) to drop it as a gate: the 3-year profit trend is a column
+and explorer filter; `--profit-growth` turns the gate back on. Also tested: net income growing (worse), ND/EBITDA < 0.5 and net cash only
 (mixed across holds; net cash is an explorer filter). 42 of 553 investable names lack 3-year data and fail closed.
 Interest coverage (operating profit / interest) is shown, not gated: ND/EBITDA < 1 already implies it, and it
 isn't in the stored history.
 
 Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps` (optional ceiling), `--ps-vs-sector`,
-`--min-net-margin`, `--max-nd-ebitda`, `--min-fscore` (optional Piotroski floor), `--no-profit-growth`, `--min-adv`, `--include-foreign`, `--top`.
+`--min-net-margin`, `--max-nd-ebitda`, `--min-fscore` (optional Piotroski floor), `--profit-growth` (optional 3-year profit gate), `--min-adv`, `--include-foreign`, `--top`.
 
 ## XBRL handling worth knowing
 - Only 10-K/10-Q-family facts are used; proxy-statement re-tags (e.g. SCHW, in thousands) are ignored.

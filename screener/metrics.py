@@ -180,6 +180,14 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     # Valuation (yields, so negative earnings rank last instead of blowing up).
     m["pe"] = _div(mcap, ni) if ni and ni > 0 else None
     m["earnings_yield"] = _div(ni, mcap)
+    # A tax bill near zero or negative (loss carryforwards, a valuation-allowance release) makes
+    # net income a one-off: value the company on pretax profit at the normal rate instead.
+    pt, tax = v.get("pretax_income_ttm"), v.get("income_tax_ttm")
+    m["tax_normalized"] = bool(ni and pt and pt > 0 and tax is not None and tax < 0.05 * pt
+                               and ni > pt * (1 - TAX_RATE))
+    m["net_income_norm"] = pt * (1 - TAX_RATE) if m["tax_normalized"] else ni
+    m["earnings_yield_norm"] = _div(m["net_income_norm"], mcap)
+    m["ni_prev"] = ni_p
     m["fcf_yield"] = _div(fcf, mcap)
     m["ev_ebit"] = _div(ev, e) if e and e > 0 and ev and ev > 0 else None
     m["ebit_ev"] = _div(e, ev) if ev and ev > 0 else None
