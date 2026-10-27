@@ -68,6 +68,7 @@ def _weights(a):
         setattr(score, attr, getattr(a, arg))
     score.US_ONLY = not a.include_foreign
     score.PS_VS_SECTOR = a.ps_vs_sector
+    score.PROFITS_GROWING = not a.no_profit_growth
     return {"value": a.w_value, "growth": a.w_growth, "profitability": a.w_profitability,
             "balance_sheet": a.w_balance, "price_action": a.w_price}
 
@@ -84,6 +85,8 @@ def cmd_screen(a):
     core = p[~p["is_financial"].astype(bool)]
     news = {t: events.headlines(str(s.at[t, "sec_name"]), t) for t in score.top_n(core, "composite", a.top).index}
     htm, csv = report.write(s, Path(a.out), top=a.top, news=news)
+    from . import explorer
+    print(explorer.write(s, Path(a.out), news=news))
     from . import store
     store.save_screen(s, report.CSV_COLS)
     store.push()
@@ -102,6 +105,17 @@ def cmd_backtest(a):
     print(res["table"].to_string(float_format=lambda x: f"{x:.3f}"))
     print(res["ic_summary"].to_string(float_format=lambda x: f"{x:.3f}"))
     print(bt_report.write(res, Path(a.out)))
+
+
+def cmd_explorer(a):
+    """Rebuild the explorer page from the last live screen (no new prices), with fresh headlines."""
+    import pandas as pd
+    from . import events, explorer, score, screen
+    s = score.score(pd.read_pickle(screen.LATEST).set_index("ticker"), _weights(a))
+    core = s[s["passes"] & ~s["is_financial"].astype(bool)]
+    uni_name = s["sec_name"] if "sec_name" in s else pd.Series(dtype=str)
+    news = {t: events.headlines(str(uni_name.get(t, t)), t) for t in score.top_n(core, "composite", a.top).index}
+    print(explorer.write(s, Path(a.out), news=news))
 
 
 def cmd_lookup(a):
@@ -136,7 +150,7 @@ def main(argv=None):
     s.add_argument("tickers", nargs="+")
     s.add_argument("--as-of", type=pd.Timestamp, default=None)
     for name, fn in (("screen", cmd_screen), ("backtest", cmd_backtest), ("audit", cmd_audit),
-                     ("lookup", cmd_lookup)):
+                     ("lookup", cmd_lookup), ("explorer", cmd_explorer)):
         s = sub.add_parser(name); s.set_defaults(fn=fn)
         if name == "lookup":
             s.add_argument("tickers", nargs="+")
@@ -160,8 +174,11 @@ def main(argv=None):
         s.add_argument("--w-balance", type=float, default=0.15)
         s.add_argument("--w-price", type=float, default=0.0)
         s.add_argument("--out", default=str(REPORTS))
-        if name == "screen":
+        s.add_argument("--no-profit-growth", action="store_true",
+                       help="drop the operating-profit-growing gate")
+        if name in ("screen", "explorer"):
             s.add_argument("--top", type=int, default=25)
+        if name == "screen":
             s.add_argument("--as-of", type=pd.Timestamp, default=None)
         if name == "backtest":
             s.add_argument("--start", default="2017-02-01")

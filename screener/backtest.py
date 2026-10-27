@@ -111,12 +111,18 @@ STRATEGIES = [
     "Implied return + insider tilt",
     "Gated, insiders bought (6M)",
     "Insider cluster buys (any investable)",
+    "Healthy: net income growing",
+    "Healthy: ND/EBITDA under 0.5",
+    "Healthy: net cash only",
+    "Healthy: NI growing + ND/EBITDA under 0.5",
+    "Size: small caps only ($0.3-2B)",
+    "Size: cap up to $10B",
     "All gated names",
     "Equal-weight universe",
 ]
 # Gate ablation: the default top 25 with one gate switched off, to find gates that only skew the list.
 ABLATE = ["fcf_positive", "low_leverage", "revenue_growing", "quality", "margins_holding",
-          "debt_discipline", "net_margin", "profitable"]
+          "debt_discipline", "net_margin", "profitable", "profits_growing"]
 HOLDS = (1, 3, 12)
 MOM_CUT = 0.2  # momentum gate drops the worst 20% of 12-1 month performers
 
@@ -200,6 +206,21 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
         books["Implied return + insider tilt"][d] = _ew(score.top_n(tilted, "tilted", TOP_N).index)
         books["Gated, insiders bought (6M)"][d] = _ew(ok[ok["ins_buyers"] >= 1].index)
         books["Insider cluster buys (any investable)"][d] = _ew(inv[inv["ins_buyers"] >= 2].index)
+        # Healthy-balance-sheet variants (2026-10-27): stricter profit-growth, debt and size rules on top of the default.
+        healthy = {
+            "Healthy: net income growing": ok["ni_growth"] > 0,
+            "Healthy: ND/EBITDA under 0.5": ok["nd_ebitda"] < 0.5,
+            "Healthy: net cash only": ok["net_debt"] <= 0,
+            "Healthy: NI growing + ND/EBITDA under 0.5": (ok["ni_growth"] > 0) & (ok["nd_ebitda"] < 0.5),
+            "Size: small caps only ($0.3-2B)": ok["mcap"] < 2e9,
+        }
+        for k, m in healthy.items():
+            books[k][d] = _ew(score.top_n(ok[m.fillna(False)], "implied_return", TOP_N).index)
+        prev, score.MAX_MCAP = score.MAX_MCAP, 10e9
+        s10 = score.score(x, weights, rank_by="implied_return")
+        score.MAX_MCAP = prev
+        ok10 = s10[s10["investable"] & s10["passes"] & ~s10["is_financial"].astype(bool)]
+        books["Size: cap up to $10B"][d] = _ew(score.top_n(ok10, "implied_return", TOP_N).index)
         books["All gated names"][d] = _ew(ok.index)
         books["Equal-weight universe"][d] = _ew(inv.index)
         q = pd.qcut(inv["implied_return"].rank(method="first"), 5, labels=False) + 1

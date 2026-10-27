@@ -15,6 +15,30 @@ python3 -m pytest -q               # offline tests
 ```
 The SEC contact goes in `sec_user_agent.txt` (gitignored) or `SEC_USER_AGENT`.
 
+## Guiding principles
+1. **Thesis first.** Small and mid-cap US companies that make money, grow profits and revenue per share, and keep
+   debt under control, bought when cheap. Every rule serves that thesis.
+2. **Rules earn their place.** A new gate or ranking factor goes in only if it beats the current default in the
+   point-in-time backtest, in both halves, without a worse drawdown. Otherwise it is display-only. Core thesis gates
+   (profitable, growing, managed debt) stay even when the backtest is neutral, as risk screens.
+3. **Point-in-time, fail closed.** Only data public on the date (SEC filing dates). Missing or unverifiable = fail.
+4. **Owner economics, per share.** Growth per share; free cash flow after stock-based pay.
+5. **Simple beats clever.** One transparent rank, few parameters, round thresholds. Count the variants tried and
+   discount the winner (best of 30 backtests is partly luck).
+6. **Investigate anomalies, don't rank them.** Odd numbers get a flag and a manual check before money moves.
+7. **Honest about uncertainty.** Report t-stats, survivorship bias, decay. t ~1 is a hypothesis, not proof.
+8. **Live prices, tracked record.** Today's prices; every run saved; the forward record is the final judge. Rerun monthly.
+9. **The screen finds candidates; you decide.** Read the filings; spread risk across many names.
+
+The same list is on the explorer's Method tab (`screener/explorer.py: PRINCIPLES`); keep the two in sync.
+
+## Explorer
+`python3 -m screener screen` also writes `reports/explorer_<date>.html`: one self-contained page (no internet
+needed) with filters (price, market cap, profit, growth, debt, insider buying, sector, search, near misses), a
+valuation map, distribution and sector charts, a sortable table with Yahoo/SEC/Finviz links, a detail panel with
+headlines, and the backtest (growth of $1, drawdowns, every variant). The filter state lives in the URL, so a view can
+be bookmarked. `python3 -m screener explorer` rebuilds it from the last screen without fetching prices.
+
 ## Where data lives
 Working caches sit on local disk (`~/screener-data`, override with `SCREENER_DATA`), because the
 shared folder is a network mount and ~1,500 small files are slow there. `db/` in this folder is the
@@ -38,7 +62,7 @@ Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
 1. **Gates** (all must pass; missing data fails): US headquarters; market cap $0.3B to $5B; price
    over $5; median daily dollar volume over $2M; filing under 200 days old; TTM net income and FCF
    positive; net margin at least 5% (financials skip it: bank revenue tags are unreliable); revenue per share up
-   on TTM and 3-year; ROIC at least 10% (ROE for financials); margins not down more than 2pp;
+   on TTM and 3-year; operating profit above a year ago (net income for financials); ROIC at least 10% (ROE for financials); margins not down more than 2pp;
    debt not up more than 25% of assets; net debt/EBITDA under 1.0; not a
    mortgage REIT; no restatement (8-K item 4.02) or bankruptcy (1.03) filed in the last year. Financials skip FCF and leverage gates and are ranked on their own list.
 2. **Rank: implied return** = cash yield (mean of earnings yield and owner FCF yield, where FCF is
@@ -79,8 +103,22 @@ dropping revenue growth helps (+1.5%/yr) but growth is a core requirement, and p
 with holding period; survivorship bias inflates all absolute numbers. Headline sentiment has no free
 history to test, so it is context only; insider buying tested as no help, so display only.
 
+### Healthy balance sheet (tested 2026-10-27, 3-month hold, CAGR / vs universe / both halves vs default)
+Sam's definition: profitable, growing profits, managed debt. "Profitable" and "managed debt" were already gates.
+| Variant | CAGR | vs universe | H1 / H2 vs default | Verdict |
+|---|---|---|---|---|
+| **Default (now incl. operating profit growing)** | 20.8% | +3.0%/yr (t 0.9) | | adopted as a thesis gate |
+| Without the operating-profit gate (old default) | 21.2% | +3.4% | -0.3% / +1.1% | gate costs ~0.4%/yr, within noise |
+| + net income growing | 20.1% | +2.3% | -0.8% / -0.6% | worse: NI swings on one-offs |
+| + ND/EBITDA under 0.5 | 21.1% | +3.4% | +0.5% / +0.2% | mixed across holds; display only |
+| + net cash only | 21.7% | +3.9% | +0.7% / +1.2% | better at 3m, worse at 1m and 12m; filter only |
+| Small caps only ($0.3-2B) | 23.3% | +5.6% | +1.8% / +3.3% | best at every hold, but survivorship bias is worst in small caps; track forward |
+| Cap up to $10B | 20.0% | +2.2% | +0.3% / -1.9% | worse; keep $5B |
+Interest coverage (operating profit / interest) is shown, not gated: ND/EBITDA < 1 already implies it, and it
+isn't in the stored history.
+
 Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps` (optional ceiling), `--ps-vs-sector`,
-`--min-net-margin`, `--max-nd-ebitda`, `--min-fscore` (optional Piotroski floor), `--min-adv`, `--include-foreign`, `--top`.
+`--min-net-margin`, `--max-nd-ebitda`, `--min-fscore` (optional Piotroski floor), `--no-profit-growth`, `--min-adv`, `--include-foreign`, `--top`.
 
 ## XBRL handling worth knowing
 - Only 10-K/10-Q-family facts are used; proxy-statement re-tags (e.g. SCHW, in thousands) are ignored.

@@ -220,6 +220,8 @@ def compute(v: dict, ticker: str, sector: str, price: float | None,
     # Balance sheet.
     ebitda = e + dna if e is not None else None
     m["ebitda"] = ebitda
+    # Times operating profit covers interest expense; None when no interest is paid.
+    m["interest_coverage"] = _div(e, interest) if e is not None and interest and interest > 0 else None
     m["nd_ebitda"] = (_div(net_debt, ebitda) if ebitda and ebitda > 0 else
                       (-1.0 if net_debt <= 0 else None))
     m["debt_equity"] = _div(debt, equity) if equity and equity > 0 else None
