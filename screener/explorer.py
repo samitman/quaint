@@ -646,7 +646,7 @@ function stats(r, b) {
     o.excess = o.cagr - (bb.reduce((a, v) => a * (1 + v), 1) ** (12 / n) - 1); o.t = me / se * Math.sqrt(n); o.hit = ex.filter(v => v > 0).length / n; }
   return o;
 }
-const group = k => k === DEFAULT ? "Default" : /^(Healthy|Size|Profit rule):/.test(k) ? "Healthy balance sheet, profit growth and size (tested 2026-10-27)" :
+const group = k => k === DEFAULT ? "Default" : /^(Healthy|Size|Profit rule):|^Earnings as reported/.test(k) ? "Healthy balance sheet, profit growth and size (tested 2026-10-27)" :
   k.startsWith("Without ") ? "Default with one gate removed" : /^Q\d$/.test(k) ? "Implied return quintiles (all investable)" :
   [BENCH, "SPY", "Baseline: top 25 FCF yield", "All gated names"].includes(k) ? "Benchmarks" : "Other variants tested";
 const GORDER = ["Default", "Healthy balance sheet, profit growth and size (tested 2026-10-27)", "Benchmarks", "Other variants tested", "Default with one gate removed", "Implied return quintiles (all investable)"];

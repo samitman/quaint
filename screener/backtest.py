@@ -32,6 +32,9 @@ def month_ends(idx: pd.DatetimeIndex, start: str) -> list[pd.Timestamp]:
 
 
 def build(start: str = "2017-02-01", reuse: bool = True, workers: int = 4) -> pd.DataFrame:
+    from . import db
+    if db.enabled():
+        return _build_from_warehouse(start, workers)
     if reuse and XS_CACHE.exists():
         return pd.read_pickle(XS_CACHE)
     if reuse:
@@ -52,6 +55,28 @@ def build(start: str = "2017-02-01", reuse: bool = True, workers: int = 4) -> pd
     xs.to_pickle(XS_CACHE)
     from . import store
     store.save_history(xs)
+    return xs
+
+
+def _build_from_warehouse(start: str, workers: int) -> pd.DataFrame:
+    """Monthly cross-sections from stored point-in-time versions: no filings re-parsed.
+    Cached until new filings or prices land, or the metrics code changes."""
+    import hashlib
+    from pathlib import Path
+    from . import metrics, warehouse
+    code = b"".join(Path(m.__file__).read_bytes() for m in (metrics, screen))
+    key = hashlib.sha1(f"{warehouse.data_version()}|{start}".encode() + code).hexdigest()[:16]
+    tag = XS_CACHE.with_suffix(".key")
+    if XS_CACHE.exists() and tag.exists() and tag.read_text() == key:
+        return pd.read_pickle(XS_CACHE)
+    uni = universe.load().set_index("ticker")
+    uni = uni[uni["index"].str.contains("SP600|SP400")]  # see build(): large caps never qualify
+    px = prices.load(uni.index.tolist())
+    dates = month_ends(px["Close"].index, start)
+    print(f"[backtest] {len(dates)} dates x {len(uni)} tickers from stored versions")
+    xs = warehouse.cross_sections(dates, uni, px, workers=workers)
+    xs.to_pickle(XS_CACHE)
+    tag.write_text(key)
     return xs
 
 
@@ -111,7 +136,7 @@ STRATEGIES = [
     "Implied return + insider tilt",
     "Gated, insiders bought (6M)",
     "Insider cluster buys (any investable)",
-    "Earnings at normal tax rate",
+    "Earnings as reported (no tax fix)",
     "Profit rule: up vs 3 years ago",
     "Profit rule: up vs 1 year ago",
     "Healthy: net income growing",
@@ -221,11 +246,11 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
         op1 = base["op_margin"] * (1 + base["rev_growth"]) > base["op_margin_prev"]
         books["Profit rule: up vs 1 year ago"][d] = _ew(
             score.top_n(base[op1.fillna(False)], "implied_return", TOP_N).index)
-        prev, score.NORMALIZE_TAX = score.NORMALIZE_TAX, True
+        prev, score.NORMALIZE_TAX = score.NORMALIZE_TAX, False
         sn = score.score(x, weights, rank_by="implied_return")
         score.NORMALIZE_TAX = prev
         okn = sn[sn["investable"] & sn["passes"] & ~sn["is_financial"].astype(bool)]
-        books["Earnings at normal tax rate"][d] = _ew(score.top_n(okn, "implied_return", TOP_N).index)
+        books["Earnings as reported (no tax fix)"][d] = _ew(score.top_n(okn, "implied_return", TOP_N).index)
         books["Profit rule: up vs 3 years ago"][d] = _ew(
             score.top_n(base[base["profit_up_3y"] == True], "implied_return", TOP_N).index)  # noqa: E712
         for k, m in healthy.items():
@@ -247,6 +272,7 @@ def run(xs: pd.DataFrame, weights: dict | None = None) -> dict:
             row[c] = inv.loc[m, c].rank().corr(f[m].rank()) if m.sum() > 30 else np.nan
         ic_rows.append(row)
 
+    books = {k: v for k, v in books.items() if v}  # e.g. ablating a gate that's switched off
     spy = prices.load(["SPY"], name="bench_")["Adj Close"]["SPY"]
     sp = spy.reindex(spy.index.union(a.index)).ffill().loc[a.index]
     spy_r = (sp.shift(-1) / sp - 1).iloc[:-1]

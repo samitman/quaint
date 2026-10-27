@@ -11,8 +11,10 @@ bash scripts/bootstrap.sh          # deps + seed ~/screener-data from db/ + refr
 python3 -m screener screen         # today's report -> reports/screen_<date>.html + .csv
 python3 -m screener lookup KO SOFI # one stock's rank and full breakdown; works outside the universe
 python3 -m screener backtest       # reuses the stored history; --rebuild recomputes it (~1h)
-python3 -m pytest -q               # offline tests
+python3 -m pytest -q               # offline tests (+ database tests when DATABASE_URL is set)
 ```
+In a cloud session, `bash scripts/db_local.sh` starts the container's Postgres and loads it (`sync`, ~40 min);
+then prefix commands with the `DATABASE_URL` it prints.
 The SEC contact goes in `sec_user_agent.txt` (gitignored) or `SEC_USER_AGENT`.
 
 ## Guiding principles
@@ -39,17 +41,45 @@ valuation map, distribution and sector charts, a sortable table with Yahoo/SEC/F
 headlines, and the backtest (growth of $1, drawdowns, every variant). The filter state lives in the URL, so a view can
 be bookmarked. `python3 -m screener explorer` rebuilds it from the last screen without fetching prices.
 
-## QUAINT (research app)
-`web/` is a small research app over our own data: ticker search, a page per company (price with 50/200-day averages
-and insider trades, key numbers, revenue/profit/margin/valuation/per-share/cash-and-debt charts, 11 years of quarterly
-financials), side-by-side compare of up to four tickers, and the screen with filters. `screen` exports its data to
-`web/data/` (`index.json` plus one chunk per first letter; gitignored, ~35MB).
-- `python3 -m screener app` serves it at http://localhost:8765. Live mode also looks up any SEC-registered ticker
-  outside the universe (pulled, scored and cached a day) and fetches headlines. `app --build` re-exports the data
-  from the last screen first.
-- The hosted copy is a private claude.ai artifact published from the same files; it only covers the universe and
-  refreshes when the files are republished after a screen.
-- Valuation history uses each quarter's TTM figures against the price 45 days after quarter end (filing lag).
+## QUAINT (the app)
+Search any ticker for a full breakdown (price with 50/200-day averages and insider trades, key numbers, revenue,
+profit, margins, valuation history, per-share and cash/debt charts, 11 years of quarterly financials), compare up to
+four tickers, browse the screen with filters, and follow the **track record**: each month's first screen opens an
+equal-weight paper book of its top 25 at that run's prices, held until the next month's list, against SPY, IJR
+(S&P 600) and IJH (S&P 400). That forward record has no hindsight or survivorship bias; the backtest has both.
+
+**Run it on your machine (Docker):**
+```
+cp .env.example .env        # set SEC_USER_AGENT="Your Name you@example.com"
+docker compose up -d        # Postgres + app + nightly worker
+docker compose logs -f worker   # first load pulls SEC filings, prices and insider data (~1 hour)
+```
+Then open http://localhost:8765. The worker refreshes every weekday at 18:30 New York time (new filings, prices,
+screen, track record). To reach it from other devices, put it behind a password (`QUAINT_PASSWORD`) and a host
+you trust; the same compose file runs on any small server.
+
+**Without Docker:** Postgres 14+, `pip install -r requirements.txt`, `export DATABASE_URL=postgresql://...`, then
+`python3 -m screener refresh` once and `python3 -m screener app` (and `worker` for the nightly refresh).
+Without DATABASE_URL everything still works from files, and `app` serves the static export in `web/data/`.
+
+**Database (`screener/db.py`, `screener/warehouse.py`):**
+| Table | Contents |
+|---|---|
+| `facts` | every tracked XBRL fact (75 concepts, periodic reports only) with its filing date |
+| `snapshots` | fundamentals inputs as of each filing date, tagged with a hash of `fundamentals.py` |
+| `prices` | daily close, adjusted close, volume, splits (universe + benchmarks + looked-up tickers) |
+| `trades` | insider open-market trades (Form 4) since 2016 |
+| `screen_runs`, `screen_rows` | every live screen, every company's numbers, with the method's code hash |
+| `books` | the monthly paper portfolio |
+
+Why history never needs a rebuild: a snapshot depends on the date only through "filed on or before", so it only
+changes when a filing lands. Storing one per filing date makes any historical cross-section a lookup plus
+`metrics.compute`; the backtest rebuilds its monthly history from them in minutes and caches it until new data
+arrives. Changing metrics or scoring needs no rebuild; changing `fundamentals.py` or adding a concept does
+(`sync --rebuild`). `sync` loads everything from the local caches; `refresh` tops it up.
+
+**Hosted copy:** a private claude.ai artifact of the static export (universe only, refreshed when republished).
+Valuation history uses each quarter's TTM figures against the price 45 days after quarter end (filing lag).
 
 ## Where data lives
 Working caches sit on local disk (`~/screener-data`, override with `SCREENER_DATA`), because the
@@ -134,6 +164,13 @@ and explorer filter; `--profit-growth` turns the gate back on. Also tested: net 
 (mixed across holds; net cash is an explorer filter). 42 of 553 investable names lack 3-year data and fail closed.
 Interest coverage (operating profit / interest) is shown, not gated: ND/EBITDA < 1 already implies it, and it
 isn't in the stored history.
+
+### One-off tax benefits (adopted 2026-10-27)
+A tax-benefit year (e.g. a valuation allowance released: QNST, RAMP) inflates net income and so the earnings yield.
+When pretax profit is positive, tax is under 5% of it and net income exceeds pretax x 0.79, valuation uses pretax
+profit taxed at 21% instead; the row is flagged "one-off tax benefit". Backtest vs earnings as reported: 24.8% vs
+24.8% (1-month hold), 21.4% vs 21.4% (3-month), 19.8% vs 19.4% (12-month). Neutral on return, removes a known
+distortion, so it's the default (`score.NORMALIZE_TAX`).
 
 Options: `--rank-by {implied_return,bargain,blend}`, `--max-mcap`, `--max-ps` (optional ceiling), `--ps-vs-sector`,
 `--min-net-margin`, `--max-nd-ebitda`, `--min-fscore` (optional Piotroski floor), `--profit-growth` (optional 3-year profit gate), `--min-adv`, `--include-foreign`, `--top`.

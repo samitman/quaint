@@ -23,8 +23,15 @@ def _company_rows(args):
     cf = edgar.fetch(cik)
     if not cf:
         return []
+    return company_rows(uni[uni["cik"] == cik], px, dates, lambda d: fundamentals.snapshot(cf, as_of=d).values,
+                        live=_STATE.get("live", False))
+
+
+def company_rows(names: pd.DataFrame, px: dict, dates, snap_at, live: bool = False) -> list[dict]:
+    """Metrics for each ticker of one company at each date. `snap_at(d)` returns the
+    fundamentals inputs public on d (parsed live from filings, or a stored version)."""
     rows = []
-    for t, r in uni[uni["cik"] == cik].iterrows():
+    for t, r in names.iterrows():
         if t not in px["Close"].columns:
             continue
         close, splits = px["Close"][t], px["Stock Splits"][t].fillna(0)
@@ -32,10 +39,12 @@ def _company_rows(args):
             c = close[:d].dropna()
             if c.empty or (d - c.index[-1]).days > 10:
                 continue  # not trading at d
-            snap = fundamentals.snapshot(cf, as_of=d).values
+            snap = snap_at(d)
+            if snap is None:
+                continue
             m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits,
                                     industry=r["industry"])
-            if _STATE.get("live"):
+            if live:
                 used = yahoo_fill.patch(snap, t, d, m["debt_estimated"])
                 if used:
                     m = metrics.compute(snap, t, r["sector"], float(c.iloc[-1]), as_of=d, splits=splits,
@@ -59,7 +68,10 @@ def cross_sections(dates: list[pd.Timestamp], uni: pd.DataFrame | None = None,
             rows.extend(part)
             if len(dates) > 1 and i % 100 == 0:
                 print(f"[history] {i}/{len(jobs)} companies", flush=True)
-    df = pd.DataFrame(rows)
+    return add_adv(pd.DataFrame(rows), px)
+
+
+def add_adv(df: pd.DataFrame, px: dict) -> pd.DataFrame:
     # Liquidity: median dollar volume over the prior ~3 months, in traded dollars.
     dollar = px["Close"] * px["Volume"]
     adv = dollar.rolling(63, min_periods=40).median()

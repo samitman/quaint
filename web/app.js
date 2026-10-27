@@ -41,16 +41,18 @@ function showTip(html, ev) { tip.innerHTML = html; tip.style.display = "block";
 const hideTip = () => { tip.style.display = "none"; };
 
 // ---------- data ----------
-const D = {idx: {}, rows: [], asof: "", news: {}, chunks: {}, cos: {}, server: false};
+const D = {idx: {}, rows: [], asof: "", news: {}, chunks: {}, cos: {}, server: false, db: false};
 const chunkOf = t => /^[A-Za-z]/.test(t) ? t[0].toUpperCase() : "0";
 async function getJSON(u) { const r = await fetch(u); if (!r.ok) throw new Error(r.status + " " + u); return r.json(); }
 async function loadCompany(t) {
   t = t.toUpperCase();
   if (D.cos[t]) return D.cos[t];
-  const k = chunkOf(t);
-  if (!D.chunks[k]) D.chunks[k] = getJSON(`data/c_${k}.json`).catch(() => ({}));
-  const ch = await D.chunks[k];
-  let c = ch[t];
+  let c = null;
+  if (!D.db) {  // static export: one file per first letter
+    const k = chunkOf(t);
+    if (!D.chunks[k]) D.chunks[k] = getJSON(`data/c_${k}.json`).catch(() => ({}));
+    c = (await D.chunks[k])[t];
+  }
   if (!c && D.server) c = await getJSON(`api/company/${encodeURIComponent(t)}`).catch(() => null);
   if (c && c.row && !D.idx[t]) { D.idx[t] = c.row; }
   return (D.cos[t] = c ? derive(c) : null);
@@ -119,6 +121,11 @@ function niceTicks(lo, hi, n = 5) { const span = hi - lo || Math.abs(hi) || 1, r
 function logTicks(lo, hi) { const out = []; for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++)
   for (const m of [1, 2, 5]) { const v = m * 10 ** e; if (v >= lo && v <= hi) out.push(v); } return out.length >= 2 ? out : niceTicks(lo, hi, 4); }
 function timeTicks(x0, x1, maxN) { const span = (x1 - x0) / DAY, out = [];
+  if (span < 80) {  // short ranges (a new track record): day ticks
+    const k = [1, 2, 7, 14].find(k => span / k <= maxN) || 28, d = new Date(x0); d.setUTCHours(0, 0, 0, 0);
+    if (d.getTime() < x0) d.setUTCDate(d.getUTCDate() + 1);
+    for (; d.getTime() <= x1; d.setUTCDate(d.getUTCDate() + k)) out.push(d.getTime());
+    return {ticks: out, fmt: t => new Date(t).toLocaleDateString("en-US", {month: "short", day: "numeric", timeZone: "UTC"})}; }
   const steps = [[1, "m"], [2, "m"], [3, "m"], [6, "m"], [12, "m"], [24, "m"], [60, "m"]];
   const months = span / 30.4; const st = steps.find(([k]) => months / k <= maxN) || [120, "m"];
   const d = new Date(x0); d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0);
@@ -266,11 +273,13 @@ addEventListener("keydown", e => { if (e.key === "/" && document.activeElement !
 
 // ---------- router ----------
 const view = $("#view");
+let RSEQ = 0;  // bumps on every navigation; async views bail out if the user moved on
 function route() {
-  hideTip(); const h = decodeURIComponent(location.hash.slice(1));
+  RSEQ++; hideTip(); const h = decodeURIComponent(location.hash.slice(1));
   let nav = "home";
   if (h.startsWith("t-")) { nav = ""; viewTicker(h.slice(2).toUpperCase()); }
   else if (h === "screen") { nav = "screen"; viewScreen(); }
+  else if (h === "record") { nav = "record"; viewRecord(); }
   else if (h === "compare" || h.startsWith("vs-")) { nav = "compare"; viewCompare(h.startsWith("vs-") ? h.slice(3).split("--").filter(Boolean).map(s => s.toUpperCase()) : null); }
   else viewHome();
   $$(".nav [data-nav]").forEach(a => a.toggleAttribute("aria-current", a.dataset.nav === nav) || a.dataset.nav === nav && a.setAttribute("aria-current", "page"));
@@ -313,6 +322,42 @@ function viewHome() {
      <div class="list">${dips.map(r => li(r, cls(r.r1m, F.spct(r.r1m)))).join("")}</div></section>
    </div>
   </div>`;
+}
+
+// ---------- track record ----------
+async function viewRecord() {
+  window.__redraw = null;
+  view.innerHTML = `<div class="card empty">Loading the track record…</div>`;
+  const my = RSEQ;
+  let R; try { R = await getJSON("api/scorecard"); } catch (e) { if (my === RSEQ) view.innerHTML = `<div class="card empty">No track record yet. ${esc(e.message)}</div>`; return; }
+  if (my !== RSEQ) return;
+  if (!R.series.length) { view.innerHTML = `<div class="card empty">No paper portfolio yet: the first screen of each month opens one.</div>`; return; }
+  const S = R.summary, B = R.bench, last = R.books[R.books.length - 1];
+  const col = {v: css("--s1"), IJR: css("--s2"), IJH: css("--s3"), SPY: css("--s4")};
+  const ser = [{k: "v", name: "QUAINT top 25"}, ...Object.keys(B).map(k => ({k, name: B[k]}))].map(o => ({...o, color: col[o.k]}));
+  view.innerHTML = `
+  <div><div class="eyebrow">Forward record since ${esc(S.since)} · no hindsight, no survivorship bias</div><h1 style="font-size:22px;margin-top:4px">Track record</h1>
+   <p class="mut" style="margin:4px 0 0;max-width:72ch">Each month's first screen buys its top 25 in equal weight at that run's prices and holds until the next month's list. Dividends included. This is the honest test of the method; the backtest flatters it.</p></div>
+  <div class="tiles">
+   <div class="tile"><div class="v">${cls(S.return, F.spct(S.return))}</div><div class="k">QUAINT top 25 since ${esc(S.since)}</div></div>
+   ${Object.keys(B).map(k => `<div class="tile"><div class="v">${cls(S["vs_" + k], F.spct(S["vs_" + k]))}</div><div class="k">vs ${esc(B[k])}</div></div>`).join("")}
+   <div class="tile"><div class="v">${R.books.length}</div><div class="k">monthly ${R.books.length === 1 ? "book" : "books"}${S.hit_rate != null ? `, ${F.pct(S.hit_rate, 0)} beat the S&amp;P 600` : ""}</div></div>
+  </div>
+  ${S.days < 90 ? `<div class="card" style="margin:0 0 14px"><b>Too early to judge.</b> <span class="mut">${S.days} days is noise; give it a year of monthly books before reading anything into it.</span></div>` : ""}
+  <section class="card" style="margin-bottom:14px"><div class="card-h"><h2>Growth of $100</h2></div>
+   <div class="legend">${ser.map(s => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join("")}</div><div class="chart" id="rc"></div></section>
+  <div class="grid2">
+   <section class="card"><div class="card-h"><h2>Monthly books</h2></div><div class="tw"><table><thead><tr><th class="l">Opened</th><th class="l">Held to</th><th>Return</th><th>S&amp;P 600</th><th>Edge</th></tr></thead><tbody>
+    ${[...R.books].reverse().map(b => `<tr><td class="l mono">${esc(b.start)}</td><td class="l mono">${esc(b.end)}</td><td>${cls(b.ret, F.spct(b.ret))}</td><td>${cls(b.bench.IJR, F.spct(b.bench.IJR))}</td><td>${cls(b.ret - b.bench.IJR, F.spct(b.ret - b.bench.IJR))}</td></tr>`).join("")}
+   </tbody></table></div></section>
+   <section class="card"><div class="card-h"><h2>Current book</h2><span class="note">opened ${esc(last.start)}</span></div><div class="tw"><table><thead><tr><th>#</th><th class="l">Ticker</th><th>Entry</th><th>Return</th></tr></thead><tbody>
+    ${[...last.names].sort((a, b) => (b.ret ?? -9) - (a.ret ?? -9)).map(n => `<tr><td>${n.rank}</td><td class="l">${tkLink(n.t)}</td><td class="mono">${F.px(n.entry)}</td><td>${cls(n.ret, F.spct(n.ret))}</td></tr>`).join("")}
+   </tbody></table></div></section>
+  </div>`;
+  const draw = () => lineChart($("#rc"), {series: ser.map(s => ({name: s.name, color: s.color, w: s.k === "v" ? 2.5 : 1.5, pts: R.series.filter(p => isNum(p[s.k])).map(p => [Date.parse(p.d), p[s.k] * 100])})),
+    h: innerWidth < 700 ? 240 : 300, yfmt: v => "$" + v.toFixed(0), refs: [{y: 100}], endDots: true, endLabels: innerWidth > 700,
+    tfmt: v => `$${v.toFixed(1)} <span class="m">(${F.spct(v / 100 - 1)})</span>`});
+  window.__redraw = draw; draw();
 }
 
 // ---------- screen ----------
@@ -384,7 +429,8 @@ function viewScreen() {
 const RANGE_D = {"1M": 31, "3M": 92, "6M": 183, "YTD": null, "1Y": 366, "3Y": 1096, "5Y": 1827, "10Y": 3653};
 async function viewTicker(t) {
   view.innerHTML = `<div class="empty">Loading ${esc(t)}…</div>`;
-  const c = await loadCompany(t);
+  const my = RSEQ, c = await loadCompany(t);
+  if (my !== RSEQ) return;
   if (!c || (!c.price.length && !c.Q.length)) {
     view.innerHTML = `<div class="card empty"><h2>${esc(t)} isn't in the database yet</h2><p>${D.server ? "SEC and Yahoo had nothing usable for it. Check the symbol." :
       "This page covers the S&amp;P 500, 400, 600 and Nasdaq-100. Run <span class=\"mono\">python3 -m screener app</span> on your computer to look up any US-listed ticker, or ask Claude to add it."}</p></div>`; return; }
@@ -534,7 +580,8 @@ async function viewCompare(list) {
   const setList = l => { location.hash = l.length ? "vs-" + l.join("--") : "compare"; };
   view.innerHTML = `<div><div class="eyebrow">Side by side</div><h1 style="font-size:22px">Compare</h1></div>
    <div class="card cmp-chips" id="chips"></div><div id="cmpbody"><div class="empty">Loading…</div></div>`;
-  const cos = (await Promise.all(list.map(loadCompany))).map((c, i) => c && Object.assign(c, {color: css(SERIES[i])}));
+  const my = RSEQ, cos = (await Promise.all(list.map(loadCompany))).map((c, i) => c && Object.assign(c, {color: css(SERIES[i])}));
+  if (my !== RSEQ) return;
   const ok = cos.filter(Boolean);
   $("#chips").innerHTML = list.map((t, i) => `<span class="cmp-chip"><i style="background:${css(SERIES[i])}"></i>${esc(t)}${cos[i] ? "" : ' <span class="mut">(no data)</span>'}<button data-x="${esc(t)}" aria-label="Remove ${esc(t)}">✕</button></span>`).join("") +
     (list.length < 4 ? `<span class="search" style="max-width:260px"><input id="cq" type="search" placeholder="Add a ticker" autocomplete="off"><ul id="csugg" class="sugg" hidden></ul></span>` : "") +
@@ -596,12 +643,13 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => wi
 
 // ---------- boot ----------
 (async function boot() {
+  try { const p = await fetch("api/ping"); const j = p.ok ? await p.json() : {}; D.server = j.ok === true; D.db = j.db === true; } catch (e) { D.server = false; }
   try {
-    const idx = await getJSON("data/index.json");
+    const idx = await getJSON(D.server ? "api/index" : "data/index.json");
     D.asof = idx.asof; D.rows = idx.rows; D.news = idx.news || {};
     for (const r of D.rows) D.idx[r.t] = r;
-  } catch (e) { view.innerHTML = `<div class="card empty">Couldn't load the database (data/index.json). ${esc(e.message)}</div>`; return; }
-  try { const p = await fetch("api/ping"); D.server = p.ok && (await p.json()).ok === true; } catch (e) { D.server = false; }
-  $("#foot").innerHTML = `Fundamentals from SEC EDGAR filings; prices from Yahoo Finance, as of ${esc(D.asof)}. ${D.server ? "Live mode: any US ticker can be looked up." : "Covers the S&amp;P 500, 400, 600 and Nasdaq-100."} Not investment advice.`;
+  } catch (e) { view.innerHTML = `<div class="card empty">${D.server ? "No screen in the database yet. If this is a new install, the first refresh is still loading (it takes about an hour); reload when it's done." : "Couldn't load the data."} <span class="mut">${esc(e.message)}</span></div>`; return; }
+  $$("[data-nav=record]").forEach(a => a.hidden = !D.db);
+  $("#foot").innerHTML = `Fundamentals from SEC EDGAR filings; prices from Yahoo Finance, as of ${esc(D.asof)}. ${D.server ? "Live mode: any US ticker can be looked up." : "Covers the S&amp;P 500, 400, 600 and Nasdaq-100."}${D.db ? " Database refreshed every weekday evening." : ""} Not investment advice.`;
   route();
 })();

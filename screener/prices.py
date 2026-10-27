@@ -33,6 +33,15 @@ def load(tickers: list[str], *, period: str = "10y", refresh: bool = False,
     `name` prefixes the cache files, so a benchmark download doesn't replace the universe's.
     """
     tickers = sorted(set(tickers))
+    from . import db
+    if db.enabled():  # the warehouse is the source of truth; downloads land there too
+        from . import warehouse
+        key = f"prices_refreshed:{name or 'universe'}"
+        if not refresh and db.get_meta(key, config.PRICE_MAX_AGE_HOURS):
+            out = warehouse.load_prices(tickers)
+            missing = sum(not out["Close"][t].notna().any() for t in tickers)
+            if missing <= 0.02 * len(tickers):  # a few index names never trade on Yahoo
+                return out
     if not refresh and _fresh(name):
         out = {f: pd.read_csv(_cache_path(f, name), index_col=0, parse_dates=True) for f in _FIELDS}
         if set(tickers) <= set(out["Close"].columns):
@@ -62,6 +71,9 @@ def load(tickers: list[str], *, period: str = "10y", refresh: bool = False,
     config.PRICE_CACHE.mkdir(parents=True, exist_ok=True)
     for f, df in out.items():
         df.to_csv(_cache_path(f, name))
+    if db.enabled():
+        warehouse.sync_prices(out)
+        db.set_meta(key, pd.Timestamp.now(tz="UTC").isoformat())
     return out
 
 
