@@ -1,5 +1,5 @@
 "use strict";
-/* Quant Desk: search, company breakdowns, charts and compare on top of the screener's database.
+/* QUAINT: search, company breakdowns, charts and compare on top of the screener's database.
    Data: data/index.json (every company's latest screen numbers) + data/c_<letter>.json (history).
    When served by `python3 -m screener app`, api/ lets it look up any ticker and fetch live headlines. */
 

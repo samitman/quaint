@@ -39,7 +39,7 @@ valuation map, distribution and sector charts, a sortable table with Yahoo/SEC/F
 headlines, and the backtest (growth of $1, drawdowns, every variant). The filter state lives in the URL, so a view can
 be bookmarked. `python3 -m screener explorer` rebuilds it from the last screen without fetching prices.
 
-## Quant Desk (research app)
+## QUAINT (research app)
 `web/` is a small research app over our own data: ticker search, a page per company (price with 50/200-day averages
 and insider trades, key numbers, revenue/profit/margin/valuation/per-share/cash-and-debt charts, 11 years of quarterly
 financials), side-by-side compare of up to four tickers, and the screen with filters. `screen` exports its data to

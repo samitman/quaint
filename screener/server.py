@@ -111,7 +111,7 @@ def serve(port: int = 8765, open_browser: bool = True) -> None:
         raise SystemExit("No app data yet: run `python3 -m screener screen` (or `app --build`) first.")
     httpd = ThreadingHTTPServer(("127.0.0.1", port), partial(Handler, directory=str(WEB)))
     url = f"http://localhost:{port}/"
-    print(f"Quant Desk running at {url}  (Ctrl+C to stop)", flush=True)
+    print(f"QUAINT running at {url}  (Ctrl+C to stop)", flush=True)
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:
