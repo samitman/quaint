@@ -7,6 +7,10 @@
     python -m screener backtest          # point-in-time monthly backtest -> reports/backtest.html
     python -m screener lookup PLTR KO    # one stock's rank and breakdown, in the universe or not
     python -m screener audit             # data-quality flags across the universe
+    python -m screener sync              # load everything into Postgres (DATABASE_URL)
+    python -m screener refresh           # nightly: new filings + prices, then a screen run
+    python -m screener worker            # run `refresh` every weekday evening
+    python -m screener app               # QUAINT web app on http://localhost:8765
 """
 from __future__ import annotations
 
@@ -89,8 +93,13 @@ def cmd_screen(a):
     print(explorer.write(s, Path(a.out), news=news))
     from . import appdata
     print(appdata.build(s, news))
-    from . import store
+    from . import db, store
     store.save_screen(s, report.CSV_COLS)
+    if db.enabled():
+        from . import insider, portfolio, warehouse
+        print(f"[db] screen run {warehouse.record_screen(s, news)}; book: {portfolio.open_book(s) or 'already open this month'}")
+        if insider.TRADES.exists():
+            warehouse.sync_trades(insider.build())
     store.push()
     p = s[s["passes"]]
     print(p[["sec_name", "sector", "pe", "pb", "fcf_yield", "rev_growth", "bargain", "implied_return"]]
@@ -120,11 +129,81 @@ def cmd_explorer(a):
     print(explorer.write(s, Path(a.out), news=news))
 
 
+BENCH = ["SPY", "IJR", "IJH", "IWM"]  # S&P 500, S&P 600, S&P 400, Russell 2000
+
+
+def cmd_sync(a):
+    """Load (or top up) the Postgres warehouse from our caches and SEC."""
+    from . import db, insider, warehouse
+    db.init()
+    uni = universe.load()
+    warehouse.sync_companies(uni)
+    print(f"[sync] {len(uni)} companies")
+    if not a.skip_prices:
+        px = prices.load(uni["ticker"].tolist())
+        n = warehouse.sync_prices(px)
+        n += warehouse.sync_prices(prices.load(BENCH, name="bench_"))
+        for k in ("universe", "bench_"):
+            db.set_meta(f"prices_refreshed:{k}", pd.Timestamp.now(tz="UTC").isoformat())
+        print(f"[sync] {n:,} price rows")
+    if insider.TRADES.exists():
+        t = insider.build()
+        warehouse.sync_trades(t)
+        print(f"[sync] {len(t):,} insider trades")
+    if not a.skip_filings:
+        warehouse.sync_fundamentals(uni["cik"], workers=a.workers, rebuild=a.rebuild)
+
+
 def cmd_app(a):
     from . import server
     if a.build:
         print(server.build_from_latest())
-    server.serve(a.port, open_browser=not a.no_browser)
+    server.serve(a.port, open_browser=not a.no_browser, host=a.host)
+
+
+def cmd_refresh(a):
+    """Nightly: new prices and filings into the warehouse, then a full screen run."""
+    from . import db, warehouse
+    import time
+    db.init()
+    f = config.UNIVERSE_FILE
+    if not f.exists() or time.time() - f.stat().st_mtime > 30 * 86400:  # index changes are quarterly
+        universe.build()
+    uni = universe.load()
+    warehouse.sync_companies(uni)
+    edgar.fetch_many(uni["cik"])  # re-downloads companyfacts older than a week
+    stale = warehouse.stale_ciks(uni["cik"])
+    print(f"[refresh] {len(stale)} companies with new filings")
+    warehouse.sync_fundamentals(stale, workers=a.workers)
+    prices.load(BENCH, name="bench_", refresh=True)
+    cmd_screen(a)
+
+
+def cmd_worker(a):
+    """Run `refresh` every weekday evening (after the US close), forever."""
+    import time
+    from zoneinfo import ZoneInfo
+    from . import db
+    tz = ZoneInfo("America/New_York")
+    hh, mm = (int(x) for x in a.at.split(":"))
+    db.init()
+    while True:
+        now = pd.Timestamp.now(tz=tz)
+        nxt = now.normalize() + pd.Timedelta(hours=hh, minutes=mm)
+        if nxt <= now:
+            nxt += pd.Timedelta(days=1)
+        while nxt.weekday() >= 5:
+            nxt += pd.Timedelta(days=1)
+        last = db.read("select max(as_of) as d from screen_runs")["d"].iloc[0]
+        if a.now or last is None or pd.isna(last) or pd.Timestamp(last) < (now - pd.Timedelta(days=3)).tz_localize(None).normalize():
+            a.now = False  # catch up once at start if the data is old
+        else:
+            print(f"[worker] next refresh {nxt:%a %Y-%m-%d %H:%M %Z}", flush=True)
+            time.sleep(max(60.0, (nxt - pd.Timestamp.now(tz=tz)).total_seconds()))
+        try:
+            cmd_refresh(a)
+        except Exception as e:  # keep the schedule alive; the next run retries
+            print(f"[worker] refresh failed: {e!r}", flush=True)
 
 
 def cmd_lookup(a):
@@ -158,12 +237,20 @@ def main(argv=None):
     s = sub.add_parser("check"); s.set_defaults(fn=cmd_check)
     s.add_argument("tickers", nargs="+")
     s.add_argument("--as-of", type=pd.Timestamp, default=None)
+    s = sub.add_parser("sync", help="load our data into the Postgres warehouse (DATABASE_URL)")
+    s.set_defaults(fn=cmd_sync)
+    s.add_argument("--rebuild", action="store_true", help="recompute every point-in-time version")
+    s.add_argument("--skip-prices", action="store_true")
+    s.add_argument("--skip-filings", action="store_true")
+    s.add_argument("--workers", type=int, default=4)
     s = sub.add_parser("app", help="run the research app locally"); s.set_defaults(fn=cmd_app)
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--build", action="store_true", help="rebuild app data from the last screen first")
     s.add_argument("--no-browser", action="store_true")
+    s.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to serve other machines (set QUAINT_PASSWORD)")
     for name, fn in (("screen", cmd_screen), ("backtest", cmd_backtest), ("audit", cmd_audit),
-                     ("lookup", cmd_lookup), ("explorer", cmd_explorer)):
+                     ("lookup", cmd_lookup), ("explorer", cmd_explorer), ("refresh", cmd_refresh),
+                     ("worker", cmd_worker)):
         s = sub.add_parser(name); s.set_defaults(fn=fn)
         if name == "lookup":
             s.add_argument("tickers", nargs="+")
@@ -189,10 +276,15 @@ def main(argv=None):
         s.add_argument("--out", default=str(REPORTS))
         s.add_argument("--profit-growth", action="store_true",
                        help="require profit per share above 3 years ago (optional gate)")
-        if name in ("screen", "explorer"):
+        if name in ("screen", "explorer", "refresh", "worker"):
             s.add_argument("--top", type=int, default=25)
-        if name == "screen":
+        if name in ("screen", "refresh", "worker"):
             s.add_argument("--as-of", type=pd.Timestamp, default=None)
+        if name in ("refresh", "worker"):
+            s.add_argument("--workers", type=int, default=4)
+        if name == "worker":
+            s.add_argument("--at", default="18:30", help="New York time to refresh on weekdays")
+            s.add_argument("--now", action="store_true", help="also refresh once at start")
         if name == "backtest":
             s.add_argument("--start", default="2017-02-01")
             s.add_argument("--rebuild", action="store_true", help="recompute point-in-time history")

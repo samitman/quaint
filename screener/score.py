@@ -26,7 +26,7 @@ MAX_DATA_AGE_DAYS = 200
 MAX_MARGIN_DROP = 0.02   # operating margin (ROE for financials) may slip at most 2pp y/y
 MAX_DEBT_GROWTH = 0.25   # debt may grow at most 25% y/y unless near net cash
 MIN_RETURN_ON_CAPITAL = 0.10  # ROIC (ROE for financials)
-NORMALIZE_TAX = False  # value tax-benefit years on pretax profit at 21%; under test 2026-10-27
+NORMALIZE_TAX = True  # value tax-benefit years on pretax profit at 21% (adopted 2026-10-27: backtest-neutral fix)
 PROFITS_GROWING = False  # optional: profit per share above 3 years ago; off by default (backtest cost, see README)
 # Mortgage REITs run 6-10x leverage on rate bets and book mark-to-market swings as
 # earnings, so "P/E 5, 0.8x book" is their permanent state, not a bargain signal.

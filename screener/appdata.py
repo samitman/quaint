@@ -194,15 +194,18 @@ def build(scored: pd.DataFrame, news: dict | None = None, out: Path = OUT) -> Pa
     for k, v in chunks.items():
         (out / f"c_{k}.json").write_text(json.dumps(v, separators=(",", ":")))
     d = pd.Timestamp(scored["date"].iloc[0])
-    idx = {"asof": f"{d:%Y-%m-%d}", "rows": index_rows(scored, uni),
-           "news": {t: [{"title": h["title"], "src": h["source"], "link": h["link"],
-                         "date": f"{h['date']:%b %d}" if pd.notna(h["date"]) else ""} for h in hs]
-                    for t, hs in (news or {}).items() if hs}}
+    idx = {"asof": f"{d:%Y-%m-%d}", "rows": index_rows(scored, uni), "news": news_rows(news)}
     (out / "index.json").write_text(json.dumps(idx, separators=(",", ":")))
     exp = sorted((out.parent.parent / "reports").glob("explorer_*.html"))
     if exp:  # the backtest/method page rides along with the app
         (out.parent / "explorer.html").write_text(exp[-1].read_text())
     return out
+
+
+def news_rows(news: dict | None) -> dict:
+    return {t: [{"title": h["title"], "src": h["source"], "link": h["link"],
+                 "date": f"{h['date']:%b %d}" if pd.notna(h["date"]) else ""} for h in hs]
+            for t, hs in (news or {}).items() if hs}
 
 
 def _chunk(t: str) -> str:

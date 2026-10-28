@@ -1,0 +1,9 @@
+db/
+reports/
+web/data/
+web/explorer.html
+sec_user_agent.txt
+.env
+**/__pycache__
+.pytest_cache
+.git
