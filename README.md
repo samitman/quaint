@@ -50,9 +50,10 @@ equal-weight paper book of its top 25 at that run's prices, held until the next 
 
 **Run it on your machine (Docker Desktop):** from this folder,
 ```
-cp .env.example .env        # set SEC_USER_AGENT="Your Name you@example.com"
-./quaint start              # Postgres + app + nightly worker; opens http://localhost:8765
-./quaint logs               # first load pulls SEC filings, prices and insider data (~1 hour)
+./quaint start              # does everything: asks your name/email for the SEC once, builds, starts
+                            # Postgres + app + nightly worker, waits out the first load (~1 hour,
+                            # shows progress), then opens http://localhost:8765
+./quaint logs               # follow the worker
 ./quaint refresh            # refresh now: new filings, prices, screen, track record
 ./quaint status             # when it last refreshed
 ./quaint stop               # data is kept in Docker volumes

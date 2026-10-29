@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# QUAINT control: ./quaint <command>   (run from the repo folder; needs Docker)
-#   start     start the database, app and nightly worker, then open the app
+# QUAINT control: ./quaint <command>   (run from the repo folder; needs Docker Desktop running)
+#   start     everything: settings, build, database, first data load, then opens the app
 #   refresh   pull new filings and prices and rerun the screen now (also updates the track record)
 #   status    when the data was last refreshed, and what's running
 #   logs      follow the worker's log (Ctrl+C to stop watching)
@@ -8,20 +8,63 @@
 #   stop      stop everything (data is kept)
 set -e
 cd "$(dirname "$0")"
-[ -f .env ] || { cp .env.example .env; echo "Created .env: put your name and email in SEC_USER_AGENT, then rerun."; exit 1; }
-PORT=$(grep -E '^QUAINT_PORT=' .env | cut -d= -f2); PORT=${PORT:-8765}
+
+PORT=8765
+if [ -f .env ]; then PORT=$(grep -E '^QUAINT_PORT=' .env | cut -d= -f2); PORT=${PORT:-8765}; fi
+URL="http://localhost:$PORT"
 run() { docker compose run --rm app python -m screener "$@"; }
+sql() { docker compose exec -T db psql -U quaint -tAc "$1" 2>/dev/null || true; }
+runs() { n=$(sql 'select count(*) from screen_runs'); echo "${n:-0}"; }
+browse() {
+  if command -v open >/dev/null; then open "$URL"
+  elif command -v wslview >/dev/null; then wslview "$URL"
+  elif command -v explorer.exe >/dev/null; then explorer.exe "$URL"
+  elif command -v xdg-open >/dev/null; then xdg-open "$URL"
+  else echo "Open $URL in your browser."; fi
+}
+need_docker() {
+  command -v docker >/dev/null || { echo "Docker isn't installed: https://www.docker.com/products/docker-desktop/"; exit 1; }
+  docker info >/dev/null 2>&1 || { echo "Docker isn't running: open Docker Desktop, wait for the whale icon to settle, then rerun."; exit 1; }
+}
+settings() {
+  [ -f .env ] || cp .env.example .env
+  if ! grep -qE '^SEC_USER_AGENT=.*@' .env; then
+    echo "The SEC asks every app that downloads filings for a name and email."
+    read -r -p "Your name and email (e.g. Jane Doe jane@example.com): " ua
+    case "$ua" in *@*) ;; *) echo "That needs an email address."; exit 1 ;; esac
+    grep -v '^SEC_USER_AGENT=' .env > .env.tmp || true
+    mv .env.tmp .env
+    echo "SEC_USER_AGENT=$ua" >> .env
+  fi
+}
+
 case "${1:-}" in
-  start)   docker compose up -d --build
-           echo "QUAINT: http://localhost:$PORT  (first start loads ~1 hour of data: ./quaint logs)"
-           command -v open >/dev/null && open "http://localhost:$PORT" || true ;;
-  refresh) run refresh ;;
-  status)  docker compose ps
-           docker compose exec -T db psql -U quaint -tAc \
-             "select 'last refresh: ' || coalesce((select value from meta where key = 'last_refresh'), 'never')
-              union all select 'latest screen: ' || coalesce(max(as_of)::text, 'none') || ' (' || count(*) || ' runs)' from screen_runs" ;;
-  logs)    docker compose logs -f worker ;;
-  lookup)  shift; run lookup "$@" ;;
-  stop)    docker compose down ;;
+  start)
+    need_docker
+    settings
+    echo "Building and starting QUAINT (the first build takes a few minutes)..."
+    docker compose up -d --build
+    until [ "$(sql 'select 1')" = "1" ]; do sleep 2; done
+    if [ "$(runs)" = "0" ]; then
+      echo "First data load: SEC filings, 10 years of prices, insider trades, then the screen (~1 hour)."
+      echo "Closing this window is fine: it keeps loading. Run ./quaint start again to check on it."
+      last=""
+      while [ "$(runs)" = "0" ]; do
+        line=$(docker compose logs --tail 1 worker 2>/dev/null | sed 's/^[^|]*| //')
+        if [ "$line" != "$last" ]; then echo "  $line"; last="$line"; fi
+        case "$line" in *"refresh failed"*)
+          echo "The load hit an error (above). Paste it to Claude; the worker retries in an hour."; exit 1 ;; esac
+        sleep 15
+      done
+    fi
+    echo "QUAINT is ready: $URL"
+    browse ;;
+  refresh) need_docker; run refresh ;;
+  status)  need_docker; docker compose ps
+           echo "last refresh: $(sql "select coalesce((select value from meta where key = 'last_refresh'), 'never')")"
+           echo "latest screen: $(sql "select coalesce(max(as_of)::text, 'none') || ' (' || count(*) || ' runs)' from screen_runs")" ;;
+  logs)    need_docker; docker compose logs -f worker ;;
+  lookup)  need_docker; shift; run lookup "$@" ;;
+  stop)    need_docker; docker compose down ;;
   *)       sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac
