@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# QUAINT control: ./quaint <command>   (run from the repo folder; needs Docker)
+#   start     start the database, app and nightly worker, then open the app
+#   refresh   pull new filings and prices and rerun the screen now (also updates the track record)
+#   status    when the data was last refreshed, and what's running
+#   logs      follow the worker's log (Ctrl+C to stop watching)
+#   lookup T  one ticker's rank and breakdown in the terminal
+#   stop      stop everything (data is kept)
+set -e
+cd "$(dirname "$0")"
+[ -f .env ] || { cp .env.example .env; echo "Created .env: put your name and email in SEC_USER_AGENT, then rerun."; exit 1; }
+PORT=$(grep -E '^QUAINT_PORT=' .env | cut -d= -f2); PORT=${PORT:-8765}
+run() { docker compose run --rm app python -m screener "$@"; }
+case "${1:-}" in
+  start)   docker compose up -d --build
+           echo "QUAINT: http://localhost:$PORT  (first start loads ~1 hour of data: ./quaint logs)"
+           command -v open >/dev/null && open "http://localhost:$PORT" || true ;;
+  refresh) run refresh ;;
+  status)  docker compose ps
+           docker compose exec -T db psql -U quaint -tAc \
+             "select 'last refresh: ' || coalesce((select value from meta where key = 'last_refresh'), 'never')
+              union all select 'latest screen: ' || coalesce(max(as_of)::text, 'none') || ' (' || count(*) || ' runs)' from screen_runs" ;;
+  logs)    docker compose logs -f worker ;;
+  lookup)  shift; run lookup "$@" ;;
+  stop)    docker compose down ;;
+  *)       sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac
