@@ -280,6 +280,7 @@ function route() {
   if (h.startsWith("t-")) { nav = ""; viewTicker(h.slice(2).toUpperCase()); }
   else if (h === "screen") { nav = "screen"; viewScreen(); }
   else if (h === "record") { nav = "record"; viewRecord(); }
+  else if (h === "about") { nav = "about"; viewAbout(); }
   else if (h === "compare" || h.startsWith("vs-")) { nav = "compare"; viewCompare(h.startsWith("vs-") ? h.slice(3).split("--").filter(Boolean).map(s => s.toUpperCase()) : null); }
   else viewHome();
   $$(".nav [data-nav]").forEach(a => a.toggleAttribute("aria-current", a.dataset.nav === nav) || a.dataset.nav === nav && a.setAttribute("aria-current", "page"));
@@ -333,7 +334,7 @@ async function viewRecord() {
   if (my !== RSEQ) return;
   if (!R.series.length) { view.innerHTML = `<div class="card empty">No paper portfolio yet: the first screen of each month opens one.</div>`; return; }
   const S = R.summary, B = R.bench, last = R.books[R.books.length - 1];
-  const col = {v: css("--s1"), IJR: css("--s2"), IJH: css("--s3"), SPY: css("--s4")};
+  const col = {v: css("--hero"), IJR: css("--s2"), IJH: css("--s3"), SPY: css("--s4")};
   const ser = [{k: "v", name: "QUAINT top 25"}, ...Object.keys(B).map(k => ({k, name: B[k]}))].map(o => ({...o, color: col[o.k]}));
   view.innerHTML = `
   <div><div class="eyebrow">Forward record since ${esc(S.since)} · no hindsight, no survivorship bias</div><h1 style="font-size:22px;margin-top:4px">Track record</h1>
@@ -358,6 +359,57 @@ async function viewRecord() {
     h: innerWidth < 700 ? 240 : 300, yfmt: v => "$" + v.toFixed(0), refs: [{y: 100}], endDots: true, endLabels: innerWidth > 700,
     tfmt: v => `$${v.toFixed(1)} <span class="m">(${F.spct(v / 100 - 1)})</span>`});
   window.__redraw = draw; draw();
+}
+
+// ---------- about ----------
+const AB_GATES = [
+  ["Size and liquidity", "US headquarters, $0.3B to $5B market cap, price over $5, at least $2M traded a day"],
+  ["Profitable", "Net income and free cash flow positive, net margin 5%+, return on capital 10%+"],
+  ["Growing", "Revenue per share up over the last year and over 3 years; margins not slipping more than 2 points"],
+  ["Balance sheet", "Net debt under 1× EBITDA, and debt not ballooning"],
+  ["Clean record", "No restatement or bankruptcy filing in the past year; no mortgage REITs"]];
+const AB_STEPS = [
+  ["Collect", "Every 10-K and 10-Q from SEC EDGAR, today's prices from Yahoo, insider trades from Form 4. Each number is stored with the date it went public, so history never sees the future."],
+  ["Filter", "About 1,500 companies in the S&amp;P 500, 400, 600 and Nasdaq-100 run through hard gates. Fail one, or have missing data, and you're out."],
+  ["Rank", "Survivors are ranked by implied return: what an owner earns each year from cash yield plus growth."],
+  ["Track", "Each month the top 25 become an equal-weight paper portfolio, measured against the S&amp;P 500, 400 and 600."]];
+function viewAbout() {
+  window.__redraw = null;
+  const inv = D.rows.filter(r => r.inv), pass = inv.filter(r => r.pass && !r.fin), top = pass.filter(r => r.top);
+  view.innerHTML = `<div class="about">
+  <section class="ab-hero">
+   <div class="eyebrow">About QU<span class="acc">AI</span>NT</div>
+   <h1>Growth at a bargain price, found by rules and checked against data.</h1>
+   <p>QUAINT screens US small and mid caps every weekday evening for one thing: businesses that make real money, grow it per share and carry little debt, yet still trade cheap. It ranks them by the return an owner would earn if the price never re-rated, and keeps a live record of how its picks do.</p>
+   <div class="ab-live"><span><b>${inv.length}</b> investable</span><span><b>${pass.length}</b> pass every gate</span><span><b>${F.pct(median(top.map(r => r.ir)))}</b> median implied return, top 25</span><span class="mut">as of ${esc(D.asof)}</span></div>
+  </section>
+  <section><h2 class="ab-h">How it works</h2>
+   <ol class="ab-steps">${AB_STEPS.map((s, i) => `<li><span class="n">0${i + 1}</span><b>${s[0]}</b><p>${s[1]}</p></li>`).join("")}</ol></section>
+  <section class="grid2">
+   <div class="card"><h2 class="ab-h">The gates <span class="mut">every one must pass</span></h2>
+    <ul class="ab-gates">${AB_GATES.map(g => `<li><b>${g[0]}</b><span>${g[1]}</span></li>`).join("")}</ul></div>
+   <div class="card"><h2 class="ab-h">The rank</h2>
+    <div class="ab-formula"><div><b>Implied return</b> = cash yield + growth</div>
+     <div><span class="acc">cash yield</span> = average of earnings yield and free-cash-flow yield (after stock pay, capped at 2× earnings)</div>
+     <div><span class="acc">growth</span> = the slower of 1-year and 3-year revenue-per-share growth, held between 0 and 20%</div></div>
+    <p>Read it as the yearly return an owner earns if the valuation multiple never changes. A company at 8× earnings growing 5% scores about 17.5%; one at 40× growing 10% scores about 12.5%. Cheap and growing wins; expensive growth has to grow into its price.</p>
+    <p class="mut">At most 7 names per sector in the top 25. Banks and insurers are ranked on their own list. Momentum, insider buying, headlines and price action are shown but never scored: each was tested and none improved the result.</p></div>
+  </section>
+  <section><h2 class="ab-h">Does it work?</h2>
+   <div class="tiles">
+    <div class="tile hero"><div class="v">21.4%</div><div class="k">QUAINT top 25, per year</div></div>
+    <div class="tile"><div class="v">18.0%</div><div class="k">all eligible small and mid caps, equal weight</div></div>
+    <div class="tile"><div class="v">14.9%</div><div class="k">S&amp;P 500 (SPY)</div></div>
+   </div>
+   <p class="ab-note">Backtest 2017 to 2026, rebalanced monthly, 3-month holds, trading costs included. The edge is about 3 points a year and isn't statistically proven. The backtest uses today's index members, which flatters it, and the edge fades after about a month, so the list refreshes monthly. The live ${D.db ? '<a href="#record">track record</a>' : "track record"}, which has neither problem, is the real test. Every variant tried is in the <a href="explorer.html" target="_blank" rel="noopener">backtest explorer</a>.</p></section>
+  <section class="card"><h2 class="ab-h">Principles</h2>
+   <ul class="ab-pr">
+    <li><b>Rules earn their place.</b> A new factor goes in only if it beats the backtest. Otherwise it's shown, not scored.</li>
+    <li><b>Point in time, fail closed.</b> Only data that was public on the date. Missing or unverifiable means fail.</li>
+    <li><b>Think like an owner.</b> Growth per share, and cash flow after stock-based pay.</li>
+    <li><b>Simple beats clever.</b> One transparent rank, round thresholds, few knobs to overfit.</li>
+    <li><b>The screen finds candidates; you decide.</b> Odd numbers get a flag, not a rank. Read the filings, spread the risk.</li>
+   </ul></section></div>`;
 }
 
 // ---------- screen ----------
@@ -512,7 +564,7 @@ async function viewTicker(t) {
     if (!P.length) { $("#pc").innerHTML = '<div class="empty">No price history</div>'; return; }
     const end = last[0], days = RANGE_D[st.range], x0 = st.range === "YTD" ? ytd : end - days * DAY;
     const pts = P.filter(p => p[0] >= x0);
-    const S = [{name: t, color: css("--s1"), pts, area: true}];
+    const S = [{name: t, color: css("--hero"), pts, area: true}];
     const daily = P.filter(p => p[0] >= end - 2 * 366 * DAY);
     if (st.ma && days !== null && days <= 366 || st.ma && st.range === "YTD") {
       const ma = n => { const out = []; let sum = 0; for (let i = 0; i < daily.length; i++) { sum += daily[i][1]; if (i >= n) sum -= daily[i - n][1]; if (i >= n - 1 && daily[i][0] >= x0) out.push([daily[i][0], sum / n]); } return out; };
@@ -530,7 +582,7 @@ async function viewTicker(t) {
     const recent = pts.filter(p => p[0] >= (last ? last[0] : 0) - 5 * 366 * DAY), md = median(recent.map(p => p[1])), now = pts.length ? pts[pts.length - 1][1] : null;
     $("#valnote").innerHTML = isNum(md) && isNum(now) ? `Now ${fmt(now)} vs a 5-year median of ${fmt(md)}: ` + (key === "fy" ? (now > md ? '<b class="pos">cheaper than usual</b>' : '<b>pricier than usual</b>')
       : (now < md ? '<b class="pos">cheaper than usual</b>' : '<b>pricier than usual</b>')) : (fin && key !== "pe" ? "Not meaningful for financials." : "Not enough history.");
-    lineChart($("#c-val"), {series: [{name: {pe: "P/E", ps: "P/S", evebit: "EV/EBIT", fy: "FCF yield"}[key], color: css("--s1"), pts}], h: 220, yfmt: fmt,
+    lineChart($("#c-val"), {series: [{name: {pe: "P/E", ps: "P/S", evebit: "EV/EBIT", fy: "FCF yield"}[key], color: css("--hero"), pts}], h: 220, yfmt: fmt,
       refs: isNum(md) ? [{y: md, label: "5-year median"}] : [], gapDays: 60});
   }
   const Q = c.Q, qd = r => r.d;
@@ -636,7 +688,7 @@ async function viewCompare(list) {
 }
 
 // ---------- theme ----------
-$("#theme").onclick = () => { const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+$("#theme").onclick = () => { const cur = document.documentElement.dataset.theme || "dark";
   document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark"; store.set("theme", document.documentElement.dataset.theme); window.__redraw && window.__redraw(); };
 { const th = store.get("theme", null); if (th) document.documentElement.dataset.theme = th; }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => window.__redraw && window.__redraw());
