@@ -143,30 +143,33 @@ def write(scored: pd.DataFrame, out_dir: Path, news: dict | None = None) -> Path
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bargain Screen Explorer</title>
+<title>QUAINT Explorer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-:root{--page:#f4f3ef;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#6f6e69;--grid:#e1e0d9;--axis:#c3c2b7;
---border:#e1e0d9;--stripe:#f6f5f1;--hover:#eceae4;--s1:#2a78d6;--s1b:#9ec5f4;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;
---neutral:#c3c2b7;--good:#0ca30c;--goodbg:#e3f3e1;--warn:#a86f00;--warnbg:#fdf0d2;--crit:#d03b3b;--critbg:#fbe4e2;
---up:#0a7d0a;--down:#c0392b;color-scheme:light}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--page:#121211;--surface:#1a1a19;--ink:#f0efec;
---ink2:#c3c2b7;--muted:#9a9890;--grid:#2c2c2a;--axis:#383835;--border:#2f2f2c;--stripe:#1f1f1d;--hover:#292927;
---s1:#3987e5;--s1b:#1c5cab;--s2:#d95926;--s3:#199e70;--s4:#c98500;--neutral:#55544f;--goodbg:#14301a;--warn:#fab219;
---warnbg:#3a2d0c;--critbg:#3d1716;--up:#3cc13c;--down:#f07167;color-scheme:dark}}
-:root[data-theme="dark"]{--page:#121211;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#9a9890;--grid:#2c2c2a;
---axis:#383835;--border:#2f2f2c;--stripe:#1f1f1d;--hover:#292927;--s1:#3987e5;--s1b:#1c5cab;--s2:#d95926;--s3:#199e70;
---s4:#c98500;--neutral:#55544f;--goodbg:#14301a;--warn:#fab219;--warnbg:#3a2d0c;--critbg:#3d1716;--up:#3cc13c;
---down:#f07167;color-scheme:dark}
+/* Same theme as the QUAINT app (web/app.css): charcoal + neon green by default, light on request. */
+:root{--page:#131417;--surface:#1b1d21;--ink:#eceef1;--ink2:#b4b8c0;--muted:#858a93;--grid:#24272c;--axis:#3a3e46;
+--border:#2b2e34;--stripe:#1f2125;--hover:#262930;--accent:#2bff88;--accent-ink:#5cffa3;--on-accent:#07120b;
+--glow:rgba(43,255,136,.14);--hero:#2bff88;--s1:#1aae5f;--s1b:#0f6b3b;--s2:#4a8fe0;--s3:#e06a33;--s4:#ad6ae0;
+--neutral:#4b4f57;--good:#3ee38a;--goodbg:#11301f;--warn:#f5b83d;--warnbg:#3a2d0c;--crit:#ff6b6b;--critbg:#3d1716;
+--up:#3ee38a;--down:#ff6b6b;--mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;color-scheme:dark}
+:root[data-theme="light"]{--page:#f2f3f3;--surface:#fcfcfc;--ink:#121417;--ink2:#4b4f57;--muted:#7a7e86;--grid:#e6e8e8;
+--axis:#c3c5c7;--border:#dfe1e2;--stripe:#f6f7f7;--hover:#eaecec;--accent:#0a9a4c;--accent-ink:#087a3c;--on-accent:#fff;
+--glow:rgba(10,154,76,.10);--hero:#0a9a4c;--s1:#0b9a4f;--s1b:#8fd6ad;--s2:#2a78d6;--s3:#e0632c;--s4:#8e4fd0;
+--neutral:#c3c5c7;--good:#0a7d3c;--goodbg:#e1f3e8;--warn:#9a6500;--warnbg:#fdf0d2;--crit:#c0392b;--critbg:#fbe4e2;
+--up:#0a7d3c;--down:#c0392b;color-scheme:light}
 *{box-sizing:border-box}
-body{margin:0;background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-a{color:var(--s1)}
+body{margin:0;background:var(--page);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;box-shadow:inset 0 2px 0 var(--accent)}
+a{color:var(--accent-ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.brand{font-family:var(--mono);font-weight:600;font-size:13px;color:var(--ink);letter-spacing:-.02em;margin-bottom:4px}
+.brand span{color:var(--accent);text-shadow:0 0 14px var(--glow)}
 header{padding:18px 24px 0;max-width:1440px;margin:0 auto}
 h1{font-size:22px;margin:0 0 2px;font-weight:650;letter-spacing:-.01em}
 .sub{color:var(--ink2);margin:0 0 12px}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-top:8px;overflow-x:auto}
 .tabs button{white-space:nowrap}
 .tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font:inherit;color:var(--ink2);cursor:pointer}
-.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--s1);font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
 .theme{margin-left:auto;align-self:center}
 main{max-width:1440px;margin:0 auto;padding:16px 24px 60px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
@@ -175,8 +178,9 @@ main{max-width:1440px;margin:0 auto;padding:16px 24px 60px}
 .seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .seg button{background:var(--surface);border:0;border-right:1px solid var(--border);padding:6px 11px;font:inherit;font-size:13px;color:var(--ink2);cursor:pointer}
 .seg button:last-child{border-right:0}
-.seg button[aria-pressed=true]{background:var(--s1);color:#fff}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--on-accent);font-weight:600}
 input[type=search],input[type=number],select{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--ink)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
 input[type=search]{min-width:220px}
 input[type=number]{width:74px}
 .chip{border:1px solid var(--border);background:var(--surface);color:var(--ink2);border-radius:999px;padding:4px 10px;font-size:12.5px;cursor:pointer}
@@ -190,7 +194,7 @@ details.more summary{cursor:pointer;color:var(--ink2);font-size:13px}
 .rg span.l{flex:1;color:var(--ink2)}
 .count{margin-left:auto;color:var(--ink2);font-size:13px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
-.kpi .v{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi .v{font-family:var(--mono);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .kpi .k{color:var(--ink2);font-size:12.5px}
 .grid{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
 .stack{display:flex;flex-direction:column;gap:14px}
@@ -213,18 +217,19 @@ svg .lab2{fill:var(--ink);font-size:12px;font-weight:600}
 table{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
 th{position:sticky;top:0;background:var(--surface);z-index:2;text-align:right;font-weight:600;color:var(--ink2);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
 th.l,td.l{text-align:left}
-th[aria-sort]::after{content:" ▾";color:var(--s1)}
+th[aria-sort]::after{content:" ▾";color:var(--accent)}
 th[aria-sort=ascending]::after{content:" ▴"}
 td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
 tbody tr:nth-child(even) td{background:var(--stripe)}
 tbody tr:hover td{background:var(--hover)}
 tbody tr{cursor:pointer}
-tbody tr.sel td{background:var(--hover);box-shadow:inset 0 0 0 0 var(--s1)}
+tbody tr.sel td{background:var(--hover)}
+tbody tr.sel td.tk{box-shadow:inset 3px 0 0 var(--accent)}
 td.tk,th.tk{position:sticky;left:0;z-index:1;background:inherit}
 th.tk{z-index:3}
 tbody tr td.tk{background:var(--surface)}
 tbody tr:nth-child(even) td.tk{background:var(--stripe)}
-td.tk a{font-weight:650;text-decoration:none}
+td.tk a{font-family:var(--mono);font-weight:600;text-decoration:none}
 td.nm{max-width:210px;overflow:hidden;text-overflow:ellipsis}
 .irbar{display:inline-flex;align-items:center;gap:6px}
 .irbar .b{display:inline-flex;width:70px;height:8px;border-radius:4px;background:var(--grid);overflow:hidden}
@@ -234,7 +239,7 @@ td.nm{max-width:210px;overflow:hidden;text-overflow:ellipsis}
 .pill.good{background:var(--goodbg);color:var(--up)}
 .pill.warn{background:var(--warnbg);color:var(--warn)}
 .pill.bad{background:var(--critbg);color:var(--down)}
-.pill.top{background:var(--s1);color:#fff}
+.pill.top{background:var(--accent);color:var(--on-accent);font-weight:600}
 .drawer{position:fixed;top:0;right:0;height:100%;width:min(440px,100%);background:var(--surface);border-left:1px solid var(--border);box-shadow:-8px 0 30px rgba(0,0,0,.12);transform:translateX(105%);transition:transform .18s ease;z-index:40;overflow:auto;padding:18px 20px 40px}
 .drawer.open{transform:none}
 .drawer h2{margin:0;font-size:20px}
@@ -253,6 +258,7 @@ td.nm{max-width:210px;overflow:hidden;text-overflow:ellipsis}
 .method ol{padding-left:20px}
 .method li{margin-bottom:10px}
 .method li b{display:block}
+.method li::marker{color:var(--accent);font-family:var(--mono)}
 .method dl{display:grid;grid-template-columns:200px 1fr;gap:6px 14px}
 .method dt{font-weight:600}
 .method dd{margin:0;color:var(--ink2)}
@@ -265,7 +271,8 @@ input[type=search]{min-width:0;flex:1}.method dl{grid-template-columns:1fr}.mgri
 </style></head>
 <body>
 <header>
-<h1>Bargain screen explorer</h1>
+<div class="brand">QU<span>AI</span>NT</div>
+<h1>Backtest explorer</h1>
 <p class="sub" id="sub"></p>
 <div class="tabs" role="tablist">
 <button role="tab" aria-selected="true" data-tab="screen">Screen</button>
@@ -468,7 +475,7 @@ function scatter(rows) {
   const W = box.clientWidth || 700, H = Math.max(300, Math.min(440, W * .58)), m = {l: 52, r: 18, t: 10, b: 38};
   const kx = S.sx, ky = S.sy, logx = kx === "mc";
   const pts = rows.filter(r => isNum(r[kx]) && isNum(r[ky]) && (!logx || r[kx] > 0));
-  const colors = [css("--s1"), css("--s2"), css("--neutral")];
+  const colors = [css("--hero"), css("--s2"), css("--neutral")];
   $("#sc-leg").innerHTML = CATS.map((c, i) => `<span><i style="background:${colors[i]}"></i>${c}</span>`).join("") +
     `<span class="mut">Dot size = market cap</span>`;
   const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": "Scatter of companies"}, box);
@@ -665,8 +672,8 @@ function btRender() {
   const b = ser[BENCH], st = stats(ser[DEFAULT], b);
   $("#btk").innerHTML = [[F.pct(st.cagr), "default, per year"], [F.spct(st.excess, 1), "vs equal-weight universe, per year"], [F.n(st.t, 1), "t-stat of the excess"],
     [F.n(st.sharpe, 2), "Sharpe ratio"], [F.pct(st.mdd, 0), "worst drawdown"], [H.dates[0] + " → " + H.dates[H.dates.length - 1], `${st.n} months`]]
-    .map(([v, l]) => `<div class="card kpi"><div class="v" style="${l.includes("months") ? "font-size:17px" : ""}">${v}</div><div class="k">${l}</div></div>`).join("");
-  const lines = [[DEFAULT, "--s1"], [BENCH, "--s2"], ["SPY", "--s3"]]; if (BT.cmp) lines.push([BT.cmp, "--s4"]);
+    .map(([v, l]) => `<div class="card kpi"><div class="v" style="${l.includes("months") ? "font-size:15px;padding-top:6px" : ""}">${v}</div><div class="k">${l}</div></div>`).join("");
+  const lines = [[DEFAULT, "--hero"], [BENCH, "--s2"], ["SPY", "--s3"]]; if (BT.cmp) lines.push([BT.cmp, "--s4"]);
   $("#bt-leg").innerHTML = lines.map(([k, c]) => `<span><i class="ln" style="background:${css(c)}"></i>${esc(label(k))}</span>`).join("");
   $("#bt-note").textContent = `Each month buys the strategy's picks and holds them ${BT.h} month${BT.h > 1 ? "s" : ""} (overlapping), after costs.`;
   lineChart($("#eq"), H.dates, lines, "eq"); lineChart($("#dd"), H.dates, lines.slice(0, BT.cmp ? 4 : 2).filter(l => l[0] !== "SPY" || true), "dd");
@@ -732,11 +739,10 @@ function method() {
 $$(".tabs [data-tab]").forEach(b => b.onclick = () => { $$(".tabs [data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
   for (const t of ["screen", "bt", "method"]) $("#tab-" + t).classList.toggle("hidden", t !== b.dataset.tab);
   if (b.dataset.tab === "bt") btRender(); else if (b.dataset.tab === "screen") update(false); });
-$("#theme").onclick = () => { const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+$("#theme").onclick = () => { const cur = document.documentElement.dataset.theme || "dark";
   document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark"; rerender(); };
 const rerender = () => { if (!$("#tab-bt").classList.contains("hidden")) btRender(); else update(false); };
 let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(rerender, 150); });
-matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", rerender);
 buildControls(); method(); update(false);
 </script></body></html>
 """
