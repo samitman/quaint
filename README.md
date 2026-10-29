@@ -48,14 +48,18 @@ four tickers, browse the screen with filters, and follow the **track record**: e
 equal-weight paper book of its top 25 at that run's prices, held until the next month's list, against SPY, IJR
 (S&P 600) and IJH (S&P 400). That forward record has no hindsight or survivorship bias; the backtest has both.
 
-**Run it on your machine (Docker):**
+**Run it on your machine (Docker Desktop):** from this folder,
 ```
 cp .env.example .env        # set SEC_USER_AGENT="Your Name you@example.com"
-docker compose up -d        # Postgres + app + nightly worker
-docker compose logs -f worker   # first load pulls SEC filings, prices and insider data (~1 hour)
+./quaint start              # Postgres + app + nightly worker; opens http://localhost:8765
+./quaint logs               # first load pulls SEC filings, prices and insider data (~1 hour)
+./quaint refresh            # refresh now: new filings, prices, screen, track record
+./quaint status             # when it last refreshed
+./quaint stop               # data is kept in Docker volumes
 ```
-Then open http://localhost:8765. The worker refreshes every weekday at 18:30 New York time (new filings, prices,
-screen, track record). To reach it from other devices, put it behind a password (`QUAINT_PASSWORD`) and a host
+The worker refreshes after every weekday's close (18:30 New York time). It checks every 10 minutes whether a
+refresh is due, so a laptop that slept through the evening catches up when it wakes. Only one refresh runs at a
+time. To reach it from other devices, put it behind a password (`QUAINT_PASSWORD`) and a host
 you trust; the same compose file runs on any small server.
 
 **Without Docker:** Postgres 14+, `pip install -r requirements.txt`, `export DATABASE_URL=postgresql://...`, then

@@ -7,6 +7,7 @@ account for). CIK and listing exchange come from SEC's own ticker file.
 from __future__ import annotations
 
 import io
+import re
 
 import pandas as pd
 
@@ -49,6 +50,7 @@ def _pick(df: pd.DataFrame, names: tuple[str, ...]) -> str | None:
 def _index_members(name: str, url: str) -> pd.DataFrame:
     html = http.get(url, headers={"User-Agent": "Mozilla/5.0 stock-screener"}).text
     for t in pd.read_html(io.StringIO(html)):
+        t.columns = [re.sub(r"\[[^\]]*\]", "", str(c)).strip() for c in t.columns]  # "ICB Industry[2]" footnotes
         tick = _pick(t, _TICKER_COLS)
         sector = _pick(t, _SECTOR_COLS)
         if tick and sector and len(t) > 50:

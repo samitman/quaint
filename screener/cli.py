@@ -163,9 +163,18 @@ def cmd_app(a):
 
 def cmd_refresh(a):
     """Nightly: new prices and filings into the warehouse, then a full screen run."""
+    from . import db
+    db.init()
+    with db.connect() as lock:  # one refresh at a time (worker and a manual run can overlap)
+        if not lock.execute("select pg_try_advisory_lock(7231)").fetchone()[0]:
+            print("[refresh] another refresh is already running; skipping")
+            return
+        _refresh(a)
+
+
+def _refresh(a):
     from . import db, warehouse
     import time
-    db.init()
     f = config.UNIVERSE_FILE
     if not f.exists() or time.time() - f.stat().st_mtime > 30 * 86400:  # index changes are quarterly
         universe.build()
@@ -177,33 +186,43 @@ def cmd_refresh(a):
     warehouse.sync_fundamentals(stale, workers=a.workers)
     prices.load(BENCH, name="bench_", refresh=True)
     cmd_screen(a)
+    db.set_meta("last_refresh", pd.Timestamp.now(tz="UTC").isoformat())
+
+
+def _last_due(now: pd.Timestamp, hh: int, mm: int) -> pd.Timestamp:
+    """The most recent weekday refresh time at or before `now`."""
+    due = now.normalize() + pd.Timedelta(hours=hh, minutes=mm)
+    if due > now:
+        due -= pd.Timedelta(days=1)
+    while due.weekday() >= 5:
+        due -= pd.Timedelta(days=1)
+    return due
 
 
 def cmd_worker(a):
-    """Run `refresh` every weekday evening (after the US close), forever."""
+    """Refresh after every weekday's US close, forever. Checks every 10 minutes whether a
+    refresh is due, so a laptop that slept through the evening catches up when it wakes."""
     import time
     from zoneinfo import ZoneInfo
     from . import db
     tz = ZoneInfo("America/New_York")
     hh, mm = (int(x) for x in a.at.split(":"))
     db.init()
+    tried = None
     while True:
         now = pd.Timestamp.now(tz=tz)
-        nxt = now.normalize() + pd.Timedelta(hours=hh, minutes=mm)
-        if nxt <= now:
-            nxt += pd.Timedelta(days=1)
-        while nxt.weekday() >= 5:
-            nxt += pd.Timedelta(days=1)
-        last = db.read("select max(as_of) as d from screen_runs")["d"].iloc[0]
-        if a.now or last is None or pd.isna(last) or pd.Timestamp(last) < (now - pd.Timedelta(days=3)).tz_localize(None).normalize():
-            a.now = False  # catch up once at start if the data is old
-        else:
-            print(f"[worker] next refresh {nxt:%a %Y-%m-%d %H:%M %Z}", flush=True)
-            time.sleep(max(60.0, (nxt - pd.Timestamp.now(tz=tz)).total_seconds()))
-        try:
-            cmd_refresh(a)
-        except Exception as e:  # keep the schedule alive; the next run retries
-            print(f"[worker] refresh failed: {e!r}", flush=True)
+        due = _last_due(now, hh, mm)
+        last = db.get_meta("last_refresh")
+        done = last is not None and pd.Timestamp(last) >= due
+        if (a.now or not done) and (tried is None or now - tried > pd.Timedelta(hours=1)):
+            a.now, tried = False, now  # a failed run retries an hour later, not in a tight loop
+            print(f"[worker] refreshing (due {due:%a %H:%M %Z})", flush=True)
+            try:
+                cmd_refresh(a)
+            except Exception as e:
+                print(f"[worker] refresh failed: {e!r}", flush=True)
+            continue
+        time.sleep(600)
 
 
 def cmd_lookup(a):
