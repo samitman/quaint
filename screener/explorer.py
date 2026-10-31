@@ -217,6 +217,10 @@ svg .lab2{fill:var(--ink);font-size:12px;font-weight:600}
 table{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
 th{position:sticky;top:0;background:var(--surface);z-index:2;text-align:right;font-weight:600;color:var(--ink2);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
 th.l,td.l{text-align:left}
+thead tr.grp th{height:28px;padding:0 10px;line-height:27px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);cursor:default}
+thead tr.grp+tr th{top:28px}
+th.gs,td.gs{border-left:1px solid var(--border)}
+thead tr.grp th.gs{box-shadow:inset 0 2px 0 color-mix(in srgb,var(--accent) 45%,transparent)}
 th[aria-sort]::after{content:" ▾";color:var(--accent)}
 th[aria-sort=ascending]::after{content:" ▴"}
 td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border)}
@@ -567,24 +571,39 @@ function sectors() {
 }
 
 // ---------- table ----------
-const COLS = [
-  {k: "rank", l: "#", f: (v, r) => r.pass ? v : "", t: "Rank by implied return among companies passing every gate"},
-  {k: "t", l: "Ticker", c: "l tk", f: (v, r) => `<a href="https://finance.yahoo.com/quote/${encodeURIComponent(v)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(v)}</a>`, t: "Opens Yahoo Finance"},
-  {k: "n", l: "Company", c: "l nm", f: (v, r) => `<span title="${esc(r.ind)}">${esc(v)}</span>`},
-  {k: "sec", l: "Sector", c: "l", f: v => `<span class="mut">${esc(v)}</span>`},
-  {k: "px", l: "Price", f: F.px}, {k: "mc", l: "Mkt cap", f: F.usd},
-  {k: "rev", l: "Revenue", f: F.usd, t: "Last 12 months"}, {k: "ni", l: "Net income", f: F.usd, t: "Last 12 months"},
-  {k: "pg3", l: "Profit/sh 3Y", f: v => cls(v, F.spct(v)), t: "Operating profit per share (net income for financials), growth per year over 3 years"},
-  {k: "nig", l: "NI growth 1Y", f: (v, r) => niG(r), t: "Net income vs a year earlier. Percentages off a loss or a tiny base are not meaningful."},
-  {k: "ir", l: "Implied return", f: (v, r) => irCell(r), t: "Cash yield + growth per share"},
-  {k: "cy", l: "Cash yield", f: F.pct}, {k: "g", l: "Growth/sh", f: F.pct},
-  {k: "pe", l: "P/E", f: v => F.x(v, 1)}, {k: "nm", l: "Net mgn", f: F.pct}, {k: "roic", l: "ROIC", f: v => F.pct(v, 0), t: "ROE for financials"},
-  {k: "nd", l: "Net debt", f: v => isNum(v) && v <= 0 ? `<span class="pos">${F.usd(-v)} cash</span>` : F.usd(v)},
-  {k: "nde", l: "ND/EBITDA", f: v => F.x(v, 1)}, {k: "cov", l: "Int. cover", f: v => isNum(v) ? F.x(Math.min(v, 999), 0) : `<span class="mut" title="No interest expense reported">–</span>`, t: "Operating profit ÷ interest expense"},
-  {k: "r1y", l: "1Y", f: v => cls(v, F.spct(v))},
-  {k: "ibu", l: "Insiders 6M", f: (v, r) => insCell(r), t: "Open-market buys by officers and directors (SEC Form 4)"},
-  {k: "flags", l: "Flags", c: "l", f: (v, r) => (r.pass ? "" : `<span class="pill">fails ${esc(r.failed.map(gname).join(", "))}</span>`) + v.map(x => `<span class="pill ${flagCls(x)}">${esc(x)}</span>`).join(""), sort: r => r.flags.length},
+const XGROUPS = [  // [group, columns]
+  ["", [
+    {k: "rank", l: "#", f: (v, r) => r.pass ? v : "", t: "Rank by implied return among companies passing every gate"},
+    {k: "t", l: "Ticker", c: "l tk", f: (v, r) => `<a href="https://finance.yahoo.com/quote/${encodeURIComponent(v)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(v)}</a>`, t: "Opens Yahoo Finance"},
+    {k: "n", l: "Company", c: "l nm", f: (v, r) => `<span title="${esc(r.ind)}">${esc(v)}</span>`},
+    {k: "sec", l: "Sector", c: "l", f: v => `<span class="mut">${esc(v)}</span>`}]],
+  ["Market", [
+    {k: "px", l: "Price", f: F.px},
+    {k: "mc", l: "Mkt cap", f: F.usd},
+    {k: "r1y", l: "1Y", f: v => cls(v, F.spct(v))}]],
+  ["Valuation", [
+    {k: "ir", l: "Implied return", f: (v, r) => irCell(r), t: "Cash yield + growth per share"},
+    {k: "cy", l: "Cash yield", f: F.pct},
+    {k: "g", l: "Growth/sh", f: F.pct},
+    {k: "pe", l: "P/E", f: v => F.x(v, 1)},
+    {k: "ps", l: "P/S", f: v => F.x(v, 1), t: "Market cap ÷ revenue, last 12 months"}]],
+  ["Fundamentals", [
+    {k: "rev", l: "Revenue", f: F.usd, t: "Last 12 months"},
+    {k: "ni", l: "Net income", f: F.usd, t: "Last 12 months"},
+    {k: "nm", l: "Net mgn", f: F.pct},
+    {k: "nd", l: "Net debt", f: v => isNum(v) && v <= 0 ? `<span class="pos">${F.usd(-v)} cash</span>` : F.usd(v)},
+    {k: "nde", l: "ND/EBITDA", f: v => F.x(v, 1)},
+    {k: "cov", l: "Int. cover", f: v => isNum(v) ? F.x(Math.min(v, 999), 0) : `<span class="mut" title="No interest expense reported">–</span>`, t: "Operating profit ÷ interest expense"}]],
+  ["Quality and growth", [
+    {k: "roic", l: "ROIC", f: v => F.pct(v, 0), t: "ROE for financials"},
+    {k: "pg3", l: "Profit/sh 3Y", f: v => cls(v, F.spct(v)), t: "Operating profit per share (net income for financials), growth per year over 3 years"},
+    {k: "nig", l: "NI growth 1Y", f: (v, r) => niG(r), t: "Net income vs a year earlier. Percentages off a loss or a tiny base are not meaningful."}]],
+  ["Signals", [
+    {k: "ibu", l: "Insiders 6M", f: (v, r) => insCell(r), t: "Open-market buys by officers and directors (SEC Form 4)"},
+    {k: "flags", l: "Flags", c: "l", f: (v, r) => (r.pass ? "" : `<span class="pill">fails ${esc(r.failed.map(gname).join(", "))}</span>`) + v.map(x => `<span class="pill ${flagCls(x)}">${esc(x)}</span>`).join(""), sort: r => r.flags.length}]]
 ];
+const COLS = XGROUPS.flatMap(([, cols], gi) => cols.map((c, i) => i === 0 && gi ? {...c, c: ((c.c || "") + " gs").trim()} : c));
+const XHEAD = `<tr class="grp">${XGROUPS.map(([g, cols], gi) => `<th colspan="${cols.length}" class="l${gi ? " gs" : ""}">${esc(g)}</th>`).join("")}</tr>`;
 const niG = r => isNum(r.nip) && r.nip <= 0 && isNum(r.ni) ? `<span class="mut">from a loss</span>` : isNum(r.nig) && r.nig > 5 ? cls(1, ">+500%") : cls(r.nig, F.spct(r.nig));
 const cls = (v, s) => isNum(v) ? `<span class="${v > 0 ? "pos" : v < 0 ? "neg" : ""}">${s}</span>` : s;
 function irCell(r) { if (!isNum(r.ir)) return "–"; const sc = .4, a = Math.max(0, Math.min(r.cy ?? 0, sc)), b = Math.max(0, Math.min(r.g ?? 0, sc - a));
@@ -593,8 +612,8 @@ function insCell(r) { if (r.ib >= 1) return `<span class="pos">${r.ib} bought ${
   if (isNum(r.inp) && r.inp < -.005) return `<span class="mut">sold ${F.usd(r.isu)}</span>`; return `<span class="mut">–</span>`; }
 let SEL = null;
 function table(rows) {
-  const th = $("#tbl thead"); th.innerHTML = "<tr>" + COLS.map(c => `<th class="${c.c || ""}" data-k="${c.k}" title="${esc(c.t || "")}" ${S.sort === c.k ? `aria-sort="${S.dir > 0 ? "ascending" : "descending"}"` : ""}>${c.l}</th>`).join("") + "</tr>";
-  th.querySelectorAll("th").forEach(h => h.onclick = () => { const k = h.dataset.k; S.dir = S.sort === k ? -S.dir : (["t", "n", "sec", "rank"].includes(k) ? 1 : -1); S.sort = k; update(); });
+  const th = $("#tbl thead"); th.innerHTML = XHEAD + "<tr>" + COLS.map(c => `<th class="${c.c || ""}" data-k="${c.k}" title="${esc(c.t || "")}" ${S.sort === c.k ? `aria-sort="${S.dir > 0 ? "ascending" : "descending"}"` : ""}>${c.l}</th>`).join("") + "</tr>";
+  th.querySelectorAll("th[data-k]").forEach(h => h.onclick = () => { const k = h.dataset.k; S.dir = S.sort === k ? -S.dir : (["t", "n", "sec", "rank"].includes(k) ? 1 : -1); S.sort = k; update(); });
   const col = COLS.find(c => c.k === S.sort), key = col && col.sort ? col.sort : r => r[S.sort];
   const sorted = [...rows].sort((a, b) => { const x = key(a), y = key(b);
     if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;

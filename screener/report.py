@@ -10,17 +10,22 @@ import pandas as pd
 
 from . import score
 
-COLS = [  # (column, header, format)
-    ("sec_name", "Company", "s"), ("sector", "Sector", "s"), ("price", "Price", "$"),
-    ("mcap", "Mkt cap", "$B"), ("revenue", "Revenue", "$B"), ("net_income", "Net income", "$B"),
-    ("implied_return", "Implied return", "%b"),
-    ("cash_yield", "= Cash yield", "%"), ("growth_rate", "+ Growth/sh", "%"), ("pe", "P/E", "x"),
-    ("ps", "P/S", "x"), ("net_margin", "Net mgn", "%"),
-    ("return_on_capital", "ROIC/ROE", "%"), ("net_debt", "Net debt", "nd"),
-    ("nd_ebitda", "ND/EBITDA", "x"), ("ret_1y", "1Y", "%±"), ("off_high", "vs 52w hi", "%"),
-    ("ins_net_usd", "Insiders 6M", "ins"), ("why", "Why it's here", "s"),
-    ("flags", "Flags", "s"),
+GROUPS = [  # (group, [(column, header, format)]); "#" and Ticker come first, under the blank group
+    ("", [("sec_name", "Company", "s"), ("sector", "Sector", "s")]),
+    ("Market", [("price", "Price", "$"), ("mcap", "Mkt cap", "$B"), ("ret_1y", "1Y", "%±"), ("off_high", "vs 52w hi", "%")]),
+    ("Valuation", [("implied_return", "Implied return", "%b"), ("cash_yield", "= Cash yield", "%"),
+                   ("growth_rate", "+ Growth/sh", "%"), ("pe", "P/E", "x"), ("ps", "P/S", "x")]),
+    ("Fundamentals", [("revenue", "Revenue", "$B"), ("net_income", "Net income", "$B"),
+                                      ("net_margin", "Net mgn", "%"), ("net_debt", "Net debt", "nd"),
+                                      ("nd_ebitda", "ND/EBITDA", "x")]),
+    ("Quality", [("return_on_capital", "ROIC/ROE", "%")]),
+    ("Signals", [("ins_net_usd", "Insiders 6M", "ins"), ("why", "Why it's here", "s"), ("flags", "Flags", "s")]),
 ]
+COLS = [c for _, cols in GROUPS for c in cols]
+# A rule down the left edge of each group (+3: CSS nth-child counts from 1, after "#" and Ticker).
+_GSTART = [3 + [c for c, _, _ in COLS].index(cols[0][0]) for g, cols in GROUPS if g]
+_GCSS = ",".join(f"tbody td:nth-child({i}),thead tr+tr th:nth-child({i})" for i in _GSTART) + \
+    "{border-left:1px solid var(--line)}thead tr.grp th{border-left:1px solid var(--line)}thead tr.grp th:first-child{border-left:0}"
 CSV_COLS = ["rank", "ticker", "sec_name", "sector", "industry", "exchange", "price", "mcap",
             "implied_return", "cash_yield", "growth_rate", "pe", "ps", "revenue", "net_margin", "pb", "ev_ebit",
             "earnings_yield",
@@ -173,8 +178,9 @@ def _flag_cell(v) -> str:
 
 
 def _table(df: pd.DataFrame, tid: str, extra: str | None = None) -> str:
-    heads = "".join(f"<th>{h}</th>" for h in ["#", "Ticker"] + [h for _, h, _ in COLS]
-                    + ([extra] if extra else []))
+    heads = "".join(f"<th>{h}</th>" for h in ["#", "Ticker"] + [h for _, h, _ in COLS] + ([extra] if extra else []))
+    groups = "".join(f"<th colspan={len(cols) + (0 if g else 2)}{' class=gs' if g else ''}>{g}</th>" for g, cols in GROUPS)
+    groups += "<th></th>" if extra else ""
     scale = max(0.2, float(df["implied_return"].max())) if len(df) else 0.2
     rows = []
     for i, (t, r) in enumerate(df.iterrows(), 1):
@@ -207,7 +213,7 @@ def _table(df: pd.DataFrame, tid: str, extra: str | None = None) -> str:
         if extra:
             cells.append(f"<td class=s>{html.escape(str(r.get('failed', '')).replace(',', ', '))}</td>")
         rows.append("<tr>" + "".join(cells) + "</tr>")
-    return (f'<div class=wrap><table id={tid}><thead><tr>{heads}</tr></thead>'
+    return (f'<div class=wrap><table id={tid}><thead><tr class=grp>{groups}</tr><tr>{heads}</tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
@@ -234,9 +240,11 @@ td.t a:hover{text-decoration:underline}td.t a::after{content:" ↗";font-size:10
 td.n{max-width:220px;overflow:hidden;text-overflow:ellipsis}td.s{color:var(--mut);white-space:normal;min-width:220px}
 td.b{font-weight:700;color:var(--fg)}td.up{color:var(--up)}td.dn{color:var(--dn)}
 td.s{font-size:12px;max-width:300px}
-th:nth-child(1),td.k{position:sticky;left:0;z-index:1;background:inherit;width:24px}
-th:nth-child(2),td.t{position:sticky;left:34px;z-index:1;background:inherit}
-th:nth-child(1),th:nth-child(2){z-index:2;background:var(--head)}
+tr+tr th:nth-child(1),td.k{position:sticky;left:0;z-index:1;background:inherit;width:24px}
+tr+tr th:nth-child(2),td.t{position:sticky;left:34px;z-index:1;background:inherit}
+tr+tr th:nth-child(1),tr+tr th:nth-child(2){z-index:2;background:var(--head)}
+thead tr.grp th{height:26px;padding:0 9px;text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);cursor:default}
+thead tr+tr th{top:26px}
 tbody tr{background:var(--bg)}
 .bar{display:inline-flex;width:64px;height:8px;margin-right:8px;vertical-align:middle;border-radius:4px;
 background:var(--line);overflow:hidden}
@@ -253,7 +261,7 @@ background:var(--line);color:var(--mut);white-space:nowrap}
 .key i{display:inline-block;width:14px;height:8px;border-radius:4px}
 """
 JS = """
-document.querySelectorAll('th').forEach((th,i)=>th.onclick=()=>{const tb=th.closest('table').tBodies[0];
+document.querySelectorAll('thead tr:last-child th').forEach(th=>th.onclick=()=>{const i=th.cellIndex,tb=th.closest('table').tBodies[0];
 const rows=[...tb.rows];const d=th.dataset.d=th.dataset.d==='a'?'d':'a';
 const key=r=>{const c=r.cells[i];return c.dataset.v!==undefined?parseFloat(c.dataset.v):c.textContent};
 rows.sort((a,b)=>{const x=key(a),y=key(b);const r=typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y));return d==='a'?r:-r});
@@ -302,7 +310,7 @@ def write(scored: pd.DataFrame, out_dir: Path, top: int = 25, note: str = "",
     dear = inv[nonfin].sort_values("implied_return").head(10)
     page = f"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>Bargain screen {d}</title>
-<style>{CSS}</style></head><body>
+<style>{CSS}{_GCSS}</style></head><body>
 <h1>Bargain screen · {d}</h1>
 <p>{len(core)} companies pass every gate, plus {len(fins)} financials ranked on their own list. Ranked by implied return.
 Universe: S&amp;P 600, 400, 500 and Nasdaq-100. Click a ticker to open it on Yahoo Finance, or any column header to sort. {html.escape(note)}</p>
