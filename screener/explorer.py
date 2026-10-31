@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import report, score, universe
+from . import config, report, score, universe
 
 # Guiding principles for the analysis (also in README). Shown on the Method tab.
 PRINCIPLES = [
@@ -106,10 +106,15 @@ def _records(s: pd.DataFrame, news: dict, ciks: pd.Series) -> list[dict]:
     return out
 
 
+BUNDLED = Path(__file__).resolve().parent / "backtest"  # last full backtest, shipped with the code
+LIVE = config.DATA_DIR / "explorer.html"  # the copy the app serves (shared with the worker in Docker)
+
+
 def _backtest(out_dir: Path) -> dict | None:
     holds = {}
     for h in (1, 3, 12):
-        f = out_dir / f"backtest_returns_hold{h}m.csv"
+        name = f"backtest_returns_hold{h}m.csv"
+        f = out_dir / name if (out_dir / name).exists() else BUNDLED / name
         if not f.exists():
             continue
         r = pd.read_csv(f, index_col=0, parse_dates=True)
@@ -137,6 +142,8 @@ def write(scored: pd.DataFrame, out_dir: Path, news: dict | None = None) -> Path
     page = PAGE.replace("__ASOF__", str(d)).replace("__DATA__", blob)
     p = out_dir / f"explorer_{d}.html"
     p.write_text(page)
+    LIVE.parent.mkdir(parents=True, exist_ok=True)
+    LIVE.write_text(page)
     return p
 
 

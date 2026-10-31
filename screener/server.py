@@ -179,6 +179,10 @@ def create_app():
         df = db.read("select id, run_at, as_of, method, n from screen_runs order by id desc limit 100")
         return JSONResponse(json.loads(df.to_json(orient="records", date_format="iso")))
 
+    @app.get("/explorer.html", response_class=HTMLResponse)
+    def explorer_page():
+        return explorer_html()
+
     @app.get("/", response_class=HTMLResponse)
     def home():
         return SKELETON + (WEB / "index.html").read_text() + "</body></html>"
@@ -194,6 +198,23 @@ def serve(port: int = 8765, open_browser: bool = True, host: str = "127.0.0.1") 
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+
+
+def explorer_html() -> str:
+    """The backtest explorer. The refresh writes it; if it is missing or older than the last
+    screen (e.g. the app started before any refresh wrote one), build it here from that screen."""
+    from . import explorer, score, screen
+    with _lock:
+        live = explorer.LIVE
+        if screen.LATEST.exists() and (not live.exists() or live.stat().st_mtime < screen.LATEST.stat().st_mtime):
+            s = score.score(pd.read_pickle(screen.LATEST).set_index("ticker"))
+            explorer.write(s, config.DATA_DIR / "reports")
+        if live.exists():
+            return live.read_text()
+    if (WEB / "explorer.html").exists():
+        return (WEB / "explorer.html").read_text()
+    return (SKELETON + '<p style="font:16px system-ui;margin:40px">The backtest explorer appears after the first '
+            "refresh finishes. Check progress with <code>./quaint logs</code>.</p></body></html>")
 
 
 def build_from_latest(fetch_news: bool = True) -> Path:

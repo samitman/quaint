@@ -116,6 +116,12 @@ def cmd_backtest(a):
     print(res["table"].to_string(float_format=lambda x: f"{x:.3f}"))
     print(res["ic_summary"].to_string(float_format=lambda x: f"{x:.3f}"))
     print(bt_report.write(res, Path(a.out)))
+    import shutil
+    from . import explorer
+    for h in (1, 3, 12):  # ship the new results with the code so a fresh install's explorer has them
+        f = Path(a.out) / f"backtest_returns_hold{h}m.csv"
+        if f.exists():
+            shutil.copy(f, explorer.BUNDLED / f.name)
 
 
 def cmd_explorer(a):
