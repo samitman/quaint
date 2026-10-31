@@ -22,7 +22,7 @@ COST_BPS = 10  # one-way, per unit of turnover
 TOP_N = 25
 IC_COLS = ["implied_return", "cash_yield", "growth_rate", "bargain", "value", "profitability",
            "balance_sheet", "growth", "mom_12_1", "price_action", "ins_buyers", "ins_net_pct", "shareholder_yield", "fcf_acq_yield", "share_change", "accruals", "asset_growth"]
-XS_CACHE = config.DATA_DIR / "backtest_xs.pkl"
+XS_CACHE = config.DATA_DIR / ("backtest_xs_wide.pkl" if config.UNIVERSE == "wide" else "backtest_xs.pkl")
 
 
 def month_ends(idx: pd.DatetimeIndex, start: str) -> list[pd.Timestamp]:
@@ -48,7 +48,7 @@ def build(start: str = "2017-02-01", reuse: bool = True, workers: int = 4) -> pd
     px = prices.load(uni.index.tolist())
     # The screen is capped at $5B: large caps never qualify and aren't peers, so skip the
     # S&P 500 / Nasdaq-100-only names (saves ~40% of the rebuild).
-    uni = uni[uni["index"].str.contains("SP600|SP400")]
+    uni = uni[uni["index"].str.contains("SP600|SP400") | (uni["index"] == "")]  # "" = wide-universe extras
     dates = month_ends(px["Close"].index, start)
     print(f"[backtest] {len(dates)} rebalance dates x {len(uni)} tickers")
     xs = screen.cross_sections(dates, uni, px, workers=workers)
@@ -70,7 +70,7 @@ def _build_from_warehouse(start: str, workers: int) -> pd.DataFrame:
     if XS_CACHE.exists() and tag.exists() and tag.read_text() == key:
         return pd.read_pickle(XS_CACHE)
     uni = universe.load().set_index("ticker")
-    uni = uni[uni["index"].str.contains("SP600|SP400")]  # see build(): large caps never qualify
+    uni = uni[uni["index"].str.contains("SP600|SP400") | (uni["index"] == "")]  # see build(): large caps never qualify
     px = prices.load(uni.index.tolist())
     dates = month_ends(px["Close"].index, start)
     print(f"[backtest] {len(dates)} dates x {len(uni)} tickers from stored versions")

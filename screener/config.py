@@ -11,6 +11,10 @@ CACHE_DIR = DATA_DIR / "cache"
 EDGAR_CACHE = CACHE_DIR / "edgar"
 PRICE_CACHE = CACHE_DIR / "prices"
 UNIVERSE_FILE = DATA_DIR / "universe.csv"
+UNIVERSE_WIDE_FILE = DATA_DIR / "universe_wide.csv"
+# "index" (default): S&P 500/400/600 + Nasdaq-100 members. "wide": every listed US company in the
+# size band (screener/wide.py). Wide stays opt-in until it beats index in the backtest.
+UNIVERSE = os.environ.get("QUAINT_UNIVERSE", "index")
 
 # SEC requires a descriptive User-Agent with a contact address, or it returns 403.
 # https://www.sec.gov/os/accessing-edgar-data
