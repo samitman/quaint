@@ -310,6 +310,7 @@ function viewHome() {
    <div class="tile"><div class="v">${F.x(median(pass.map(r => r.pe)))}</div><div class="k">median P/E, passing</div></div>
    <div class="tile"><div class="v">${inv.filter(r => r.ib >= 2).length}</div><div class="k">insider cluster buys (6M)</div></div>
   </div>
+  ${changesCard()}
   <div class="grid2">
    <section class="card"><div class="card-h"><h2>Top 25 bargains</h2><a href="#screen" class="note">Full screen →</a></div>
     <div class="list">${top.map(r => li(r, `<b>${F.pct(r.ir)}</b> <span class="mut">IR</span>`)).join("")}</div></section>
@@ -323,6 +324,28 @@ function viewHome() {
      <div class="list">${dips.map(r => li(r, cls(r.r1m, F.spct(r.r1m)))).join("")}</div></section>
    </div>
   </div>`;
+}
+
+// What moved since the previous price date: names that entered or left the top 25 or the passing list.
+const CHG = {in_top: ["Entered top 25", "good"], in_pass: ["Now passes", "good"], out_top: ["Left top 25", "warn"], out_pass: ["Now fails", "bad"]};
+function changesCard() {
+  const C = D.changes; if (!C) return "";
+  const since = new Date(C.since + "T12:00:00Z").toLocaleDateString("en-US", {weekday: "short", month: "short", day: "numeric", timeZone: "UTC"});
+  const why = c => {
+    const out = [];
+    if (c.kind === "in_top" && c.rank) out.push(`#${c.rank}`);
+    if (c.cleared.length) out.push("cleared " + c.cleared.map(gname).join(", "));
+    if (c.failing.length) out.push("fails " + c.failing.map(gname).join(", "));
+    if (c.filing) out.push(`new filing (quarter to ${c.filing})`);
+    if (isNum(c.px_chg) && Math.abs(c.px_chg) >= .02) out.push(`price ${F.spct(c.px_chg)}`);
+    if (isNum(c.ir) && isNum(c.ir_prev) && Math.abs(c.ir - c.ir_prev) >= .005) out.push(`implied return ${F.pct(c.ir_prev)} → ${F.pct(c.ir)}`);
+    if (c.kind === "out_top" && !c.failing.length) out.push("outranked by cheaper names");
+    return out.join(" · ");
+  };
+  const rows = C.items.slice(0, 12).map(c => { const r = D.idx[c.t] || {}, [lab, k] = CHG[c.kind];
+    return `<a class="chg" href="#t-${encodeURIComponent(c.t)}"><span class="tk">${esc(c.t)}</span><span class="n">${esc(r.n || "")}${c.fin ? ' <span class="mut">(financial)</span>' : ""}<small>${why(c)}</small></span><span class="pill ${k}">${lab}</span></a>`; }).join("");
+  return `<section class="card"><div class="card-h"><h2>New since ${esc(since)}</h2><span class="note">${C.items.length ? `${C.items.length} change${C.items.length === 1 ? "" : "s"} to the passing list` : ""}</span></div>
+   <div class="list">${rows || '<div class="mut" style="padding:6px 0">No changes: the same names pass and the same 25 lead.</div>'}</div>${C.items.length > 12 ? `<div class="mut" style="font-size:12px;margin-top:6px">+${C.items.length - 12} more</div>` : ""}</section>`;
 }
 
 // ---------- track record ----------
@@ -702,7 +725,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => wi
   try { const p = await fetch("api/ping"); const j = p.ok ? await p.json() : {}; D.server = j.ok === true; D.db = j.db === true; } catch (e) { D.server = false; }
   try {
     const idx = await getJSON(D.server ? "api/index" : "data/index.json");
-    D.asof = idx.asof; D.rows = idx.rows; D.news = idx.news || {};
+    D.asof = idx.asof; D.rows = idx.rows; D.news = idx.news || {}; D.changes = idx.changes || null;
     for (const r of D.rows) D.idx[r.t] = r;
   } catch (e) { view.innerHTML = `<div class="card empty">${D.server ? "No screen in the database yet. If this is a new install, the first refresh is still loading (it takes about an hour); reload when it's done." : "Couldn't load the data."} <span class="mut">${esc(e.message)}</span></div>`; return; }
   $$("[data-nav=record]").forEach(a => a.hidden = !D.db);

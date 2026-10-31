@@ -302,7 +302,45 @@ def latest_index() -> dict | None:
             return None
         rows = [x[0] for x in con.execute("select data from screen_rows where run_id = %s", (r[0],))]
         nw = con.execute("select value from meta where key = 'news'").fetchone()
-    return {"asof": r[1].isoformat(), "run": r[0], "rows": rows, "news": json.loads(nw[0]) if nw else {}}
+    return {"asof": r[1].isoformat(), "run": r[0], "rows": rows, "news": json.loads(nw[0]) if nw else {},
+            "changes": changes(r[0])}
+
+
+def changes(run_id: int) -> dict | None:
+    """What moved between this run and the last run on an earlier price date: names that entered
+    or left the top 25 or the passing list, with what changed (price, filing, gates)."""
+    with db.connect() as con:
+        cur = con.execute("select as_of from screen_runs where id = %s", (run_id,)).fetchone()
+        prev = con.execute("select id, as_of from screen_runs where as_of < %s order by as_of desc, id desc limit 1",
+                           (cur[0],)).fetchone() if cur else None
+        if not prev:
+            return None
+        now = {x[0]["t"]: x[0] for x in con.execute("select data from screen_rows where run_id = %s", (run_id,))}
+        was = {x[0]["t"]: x[0] for x in con.execute("select data from screen_rows where run_id = %s", (prev[0],))}
+    items = []
+    for t, r in now.items():
+        p = was.get(t)
+        if p is None:
+            continue  # new to the universe: no "before" to compare
+        if r["top"] and not p["top"]:
+            kind = "in_top"
+        elif r["pass"] and not p["pass"]:
+            kind = "in_pass"
+        elif p["top"] and not r["top"]:
+            kind = "out_top"
+        elif p["pass"] and not r["pass"]:
+            kind = "out_pass"
+        else:
+            continue
+        px = r.get("px") / p["px"] - 1 if r.get("px") and p.get("px") else None
+        items.append({"t": t, "kind": kind, "fin": r["fin"], "rank": r.get("rank"), "px_chg": px,
+                      "ir": r.get("ir"), "ir_prev": p.get("ir"),
+                      "cleared": [g for g in p.get("failed", []) if g not in r.get("failed", [])],
+                      "failing": [g for g in r.get("failed", []) if g not in p.get("failed", [])],
+                      "filing": r.get("pend") if r.get("pend") and r.get("pend") != p.get("pend") else None})
+    order = {"in_top": 0, "in_pass": 1, "out_top": 2, "out_pass": 3}
+    items.sort(key=lambda x: (order[x["kind"]], x["rank"] or 999))
+    return {"since": prev[1].isoformat(), "items": items}
 
 
 def stale_ciks(ciks) -> list[int]:

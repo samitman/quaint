@@ -166,7 +166,8 @@ def index_rows(scored: pd.DataFrame, uni: pd.DataFrame) -> list[dict]:
                "top": t in top, "rank": rank.get(t),
                "failed": [f.strip() for f in str(r.get("failed") or "").split(",") if f.strip()],
                "why": report.why(r) if r.get("passes") else "",
-               "flags": [f for f in report._flags(r).split("; ") if f]}
+               "flags": [f for f in report._flags(r).split("; ") if f],
+               "pend": f"{pd.Timestamp(r['period_end']):%Y-%m-%d}" if pd.notna(r.get("period_end")) else None}
         for k, c in INDEX_COLS.items():
             row[k] = _num(r.get(c), 5)
         rows.append(row)
