@@ -58,3 +58,30 @@ def test_versions_cover_every_filing_date(monkeypatch):
         with db.connect() as con:
             for t in ("facts", "snapshots", "fact_loads"):
                 con.execute(f"delete from {t} where cik = %s", (cik,))
+
+
+@pytest.mark.skipif(not os.environ.get("DATABASE_URL"), reason="needs Postgres")
+def test_changes_between_runs():
+    db.init()
+    row = lambda t, top, ok, failed=(), px=10.0: {"t": t, "top": top, "pass": ok, "fin": False, "rank": 1 if ok else None,
+                                                  "failed": list(failed), "px": px, "ir": .2, "pend": "2026-06-30"}
+    runs = {"2099-01-02": [row("AAA", False, False, ["mcap"]), row("BBB", True, True), row("CCC", False, True)],
+            "2099-01-03": [row("AAA", True, True, px=9.0), row("BBB", False, True), row("CCC", False, False, ["net_margin"])]}
+    ids = []
+    try:
+        with db.connect() as con:
+            for d, rows in runs.items():
+                rid = con.execute("insert into screen_runs (as_of, method, n) values (%s, 'test', 0) returning id", (d,)).fetchone()[0]
+                ids.append(rid)
+                for r in rows:
+                    con.execute("insert into screen_rows (run_id, ticker, passes, investable, data) values (%s, %s, %s, true, %s)",
+                                (rid, r["t"], r["pass"], json.dumps(r)))
+        c = W.changes(ids[-1])
+        assert c["since"] == "2099-01-02"
+        got = {i["t"]: i for i in c["items"]}
+        assert got["AAA"]["kind"] == "in_top" and got["AAA"]["cleared"] == ["mcap"] and round(got["AAA"]["px_chg"], 2) == -.1
+        assert got["BBB"]["kind"] == "out_top" and got["CCC"]["kind"] == "out_pass" and got["CCC"]["failing"] == ["net_margin"]
+        assert [i["t"] for i in c["items"]] == ["AAA", "BBB", "CCC"]
+    finally:
+        with db.connect() as con:
+            con.execute("delete from screen_runs where id = any(%s)", (ids,))

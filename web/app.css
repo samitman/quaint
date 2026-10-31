@@ -145,6 +145,9 @@ td.best { font-weight: 650; color: var(--ink) }
 .li { display: grid; grid-template-columns: 70px minmax(0, 1fr) 90px 64px; gap: 10px; align-items: center; padding: 7px 4px; border-bottom: 1px dashed var(--line); text-decoration: none; color: var(--ink) }
 .li:hover { background: var(--hover) } .li .tk { font-weight: 600 } .li .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); font-size: 13px }
 .li .v { text-align: right; font-family: var(--mono); font-size: 13px }
+.chg { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed var(--line); text-decoration: none; color: var(--ink) }
+.chg:last-child { border-bottom: 0 } .chg:hover { background: var(--hover) } .chg .tk { font-weight: 600 }
+.chg .n { min-width: 0; font-size: 13px; color: var(--ink2) } .chg small { display: block; color: var(--muted); font-size: 12px; margin-top: 1px }
 
 @media (max-width: 980px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)) } .grid3 { grid-template-columns: 1fr } }
 @media (max-width: 760px) {
