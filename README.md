@@ -104,6 +104,14 @@ cache is empty. To see how past picks did: `select * from screens where rank <= 
 
 ## Method
 Universe: S&P 600 + 400 + 500 + Nasdaq-100, NYSE/Nasdaq/Cboe listed.
+The member list is re-read weekly. A **wide universe** (`QUAINT_UNIVERSE=wide`, `screener/wide.py`)
+adds every other listed US company in a $0.1-10B prefilter (~975 more; sector from SEC SIC code).
+Backtest 2017-04 to 2026-09, rerun 2026-10-31: wide top 25 returned 16.8%/yr at a 3-month hold
+vs 21.3% for the index list (1m: 18.0 vs 24.8; 12m: 14.3 vs 19.7), with a deeper drawdown
+(-37% vs -30%). Its own equal-weight universe returned 12.5% vs 18.1%: index membership works as
+a quality filter. Part of that gap is survivorship bias in the index list (today's members are
+yesterday's winners), so the true gap is smaller, but nothing says wide is better. Default stays
+index; wide is opt-in.
 
 1. **Gates** (all must pass; missing data fails): US headquarters; market cap $0.3B to $5B; price
    over $5; median daily dollar volume over $2M; filing under 200 days old; TTM net income and FCF

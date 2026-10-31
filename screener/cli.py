@@ -175,8 +175,8 @@ def cmd_refresh(a):
 def _refresh(a):
     from . import db, warehouse
     import time
-    f = config.UNIVERSE_FILE
-    if not f.exists() or time.time() - f.stat().st_mtime > 30 * 86400:  # index changes are quarterly
+    f = universe.path()
+    if not f.exists() or time.time() - f.stat().st_mtime > 7 * 86400:  # S&P changes members most weeks
         universe.build()
     uni = universe.load()
     warehouse.sync_companies(uni)

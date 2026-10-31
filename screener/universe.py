@@ -74,7 +74,8 @@ def sec_ticker_map() -> pd.DataFrame:
     return df.rename(columns={"name": "sec_name"})[["ticker", "cik", "sec_name", "exchange"]]
 
 
-def build(save: bool = True) -> pd.DataFrame:
+def build(save: bool = True, wide: bool | None = None) -> pd.DataFrame:
+    wide = config.UNIVERSE == "wide" if wide is None else wide
     parts = [_index_members(n, u) for n, u in WIKI.items()]
     members = pd.concat(parts, ignore_index=True)
     # One row per ticker; remember every index it belongs to.
@@ -100,6 +101,11 @@ def build(save: bool = True) -> pd.DataFrame:
     if save:
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         uni.to_csv(config.UNIVERSE_FILE, index=False)
+    if wide:
+        from . import wide as W
+        uni = pd.concat([uni, W.extras(sec, set(uni["cik"]))], ignore_index=True)
+        if save:
+            uni.to_csv(config.UNIVERSE_WIDE_FILE, index=False)
     return uni
 
 
@@ -132,8 +138,15 @@ def hq_location(cik: int) -> str:
     return loc
 
 
-def load() -> pd.DataFrame:
-    uni = build() if not config.UNIVERSE_FILE.exists() else pd.read_csv(config.UNIVERSE_FILE)
+def path(wide: bool | None = None):
+    wide = config.UNIVERSE == "wide" if wide is None else wide
+    return config.UNIVERSE_WIDE_FILE if wide else config.UNIVERSE_FILE
+
+
+def load(wide: bool | None = None) -> pd.DataFrame:
+    f = path(wide)
+    uni = build(wide=wide) if not f.exists() else pd.read_csv(f)
+    uni["index"] = uni["index"].fillna("")  # non-index companies in the wide universe
     for t, (sector, industry) in SECTOR_OVERRIDES.items():
         uni.loc[uni["ticker"] == t, ["sector", "industry"]] = [sector, industry]
     return uni
