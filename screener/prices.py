@@ -44,28 +44,38 @@ def load(tickers: list[str], *, period: str = "10y", refresh: bool = False,
                 return out
     if not refresh and _fresh(name):
         out = {f: pd.read_csv(_cache_path(f, name), index_col=0, parse_dates=True) for f in _FIELDS}
-        if set(tickers) <= set(out["Close"].columns):
+        if all(set(tickers) <= set(df.columns) for df in out.values()):
             return {f: df[tickers] for f, df in out.items()}
 
     import yfinance as yf  # imported lazily so offline modules/tests don't need it
 
-    frames = {f: [] for f in _FIELDS}
-    for i in range(0, len(tickers), chunk):
-        batch = tickers[i:i + chunk]
-        df = yf.download(batch, period=period, auto_adjust=False, actions=True,
-                         group_by="column", threads=True, progress=False)
-        for f in _FIELDS:
-            if f not in df.columns.get_level_values(0):
-                part = pd.DataFrame(0.0, index=df.index, columns=batch)
-            else:
-                part = df[f]
-            if isinstance(part, pd.Series):  # single-ticker batch
-                part = part.to_frame(batch[0])
-            frames[f].append(part)
-        print(f"[prices] {min(i + chunk, len(tickers))}/{len(tickers)}")
+    def fetch(names: list[str], size: int) -> dict[str, pd.DataFrame]:
+        frames = {f: [] for f in _FIELDS}
+        for i in range(0, len(names), size):
+            batch = names[i:i + size]
+            df = yf.download(batch, period=period, auto_adjust=False, actions=True,
+                             group_by="column", threads=True, progress=False)
+            for f in _FIELDS:
+                part = df[f] if f in df.columns.get_level_values(0) else pd.DataFrame(index=df.index)
+                if isinstance(part, pd.Series):  # single-ticker batch
+                    part = part.to_frame(batch[0])
+                # Yahoo leaves failed tickers out of the action columns (splits) but not out of
+                # Close, so square every field up to the batch: no split = 0, no price = NaN.
+                part = part.reindex(columns=batch)
+                frames[f].append(part.fillna(0.0) if f == "Stock Splits" else part)
+            print(f"[prices] {min(i + size, len(names))}/{len(names)}")
+        return {f: pd.concat(v, axis=1).sort_index() for f, v in frames.items()}
 
-    out = {f: pd.concat(v, axis=1).sort_index() for f, v in frames.items()}
+    out = fetch(tickers, chunk)
     empty = [t for t in tickers if out["Close"][t].dropna().empty] if tickers else []
+    if empty:  # usually Yahoo throttling a batch; one slower retry recovers most of them
+        time.sleep(5)
+        again = fetch(empty, 20)
+        got = [t for t in empty if not again["Close"][t].dropna().empty]
+        for f in _FIELDS:
+            out[f] = out[f].drop(columns=got).join(again[f][got], how="outer")[tickers]
+        out["Stock Splits"] = out["Stock Splits"].fillna(0.0)
+        empty = [t for t in empty if t not in got]
     if empty:
         print(f"[prices] no data for {len(empty)}: {empty[:15]}")
     config.PRICE_CACHE.mkdir(parents=True, exist_ok=True)
