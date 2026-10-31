@@ -108,6 +108,10 @@ table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13
 th { position: sticky; top: 0; background: var(--panel); text-align: right; color: var(--ink2); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; z-index: 1 }
 td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line2); white-space: nowrap }
 th.l, td.l { text-align: left }
+thead tr.grp th { height: 28px; padding: 0 10px; line-height: 27px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600 }
+thead tr.grp + tr th { top: 28px }
+th.gs, td.gs { border-left: 1px solid var(--line) }
+thead tr.grp th.gs { box-shadow: inset 0 2px 0 color-mix(in srgb, var(--accent) 45%, transparent) }
 tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--bg) 55%, var(--panel)) }
 tbody tr:hover td { background: var(--hover) }
 tr.click { cursor: pointer }

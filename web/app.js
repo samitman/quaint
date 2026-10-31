@@ -414,16 +414,20 @@ function viewAbout() {
 
 // ---------- screen ----------
 const SDEF = {mode: "pass", group: "co", sec: "", q: "", r: {}, tg: [], sort: "ir", dir: -1};
-const RANGES = [["mc", "Mkt cap $B", 1e9], ["pe", "P/E", 1], ["nm", "Net margin %", .01], ["nde", "ND/EBITDA", 1], ["ir", "Implied return %", .01], ["pg3", "Profit/sh 3Y %", .01], ["r1y", "1Y price %", .01]];
+const RANGES = [["mc", "Mkt cap $B", 1e9], ["pe", "P/E", 1], ["ps", "P/S", 1], ["nm", "Net margin %", .01], ["nde", "ND/EBITDA", 1], ["ir", "Implied return %", .01], ["pg3", "Profit/sh 3Y %", .01], ["r1y", "1Y price %", .01]];
 const TOGGLES = [["ins", "Insiders bought", r => r.ib >= 1], ["cash", "Net cash", r => isNum(r.nd) && r.nd <= 0], ["pg", "Profit/share up over 3Y", r => r.pg3 > 0],
   ["calm", "Hide amber flags", r => !(r.flags || []).some(isWarn)]];
-const SCOLS = [
-  ["rank", "#", r => r.pass ? r.rank : ""], ["t", "Ticker", r => tkLink(r.t), "l"], ["n", "Company", r => esc(r.n), "l nm"], ["sec", "Sector", r => `<span class="mut">${esc(r.sec)}</span>`, "l"],
-  ["px", "Price", r => F.px(r.px)], ["mc", "Mkt cap", r => F.usd(r.mc, 2)], ["rev", "Revenue", r => F.usd(r.rev)], ["ni", "Net income", r => F.usd(r.ni)],
-  ["ir", "Implied return", irBar], ["pe", "P/E", r => F.x(r.pe)], ["nm", "Net mgn", r => F.pct(r.nm)], ["roic", "ROIC", r => F.pct(r.fin ? r.roe : r.roic, 0)],
-  ["pg3", "Profit/sh 3Y", r => cls(r.pg3, F.spct(r.pg3))], ["nde", "ND/EBITDA", r => F.x(r.nde)], ["r1y", "1Y", r => cls(r.r1y, F.spct(r.r1y, 0))],
-  ["ibu", "Insiders 6M", r => r.ib >= 1 ? `<span class="pos">${r.ib} bought ${F.usd(r.ibu, 1)}</span>` : '<span class="mut">–</span>'],
-  ["flags", "Flags", r => (r.pass ? "" : `<span class="pill">fails ${esc(r.failed.map(gname).join(", "))}</span>`) + pills(r), "l"]];
+const SGROUPS = [  // [group, columns]; each column is [key, header, cell, class]
+  ["", [["rank", "#", r => r.pass ? r.rank : ""], ["t", "Ticker", r => tkLink(r.t), "l"], ["n", "Company", r => esc(r.n), "l nm"], ["sec", "Sector", r => `<span class="mut">${esc(r.sec)}</span>`, "l"]]],
+  ["Market", [["px", "Price", r => F.px(r.px)], ["mc", "Mkt cap", r => F.usd(r.mc, 2)], ["r1y", "1Y", r => cls(r.r1y, F.spct(r.r1y, 0))]]],
+  ["Valuation", [["ir", "Implied return", irBar], ["pe", "P/E", r => F.x(r.pe)], ["ps", "P/S", r => F.x(r.ps)]]],
+  ["Fundamentals", [["rev", "Revenue", r => F.usd(r.rev)], ["ni", "Net income", r => F.usd(r.ni)], ["nm", "Net mgn", r => F.pct(r.nm)],
+    ["nd", "Net debt", r => isNum(r.nd) && r.nd <= 0 ? `<span class="pos">${F.usd(-r.nd)} cash</span>` : F.usd(r.nd)], ["nde", "ND/EBITDA", r => F.x(r.nde)]]],
+  ["Quality and growth", [["roic", "ROIC", r => F.pct(r.fin ? r.roe : r.roic, 0)], ["pg3", "Profit/sh 3Y", r => cls(r.pg3, F.spct(r.pg3))]]],
+  ["Signals", [["ibu", "Insiders 6M", r => r.ib >= 1 ? `<span class="pos">${r.ib} bought ${F.usd(r.ibu, 1)}</span>` : '<span class="mut">–</span>'],
+    ["flags", "Flags", r => (r.pass ? "" : `<span class="pill">fails ${esc(r.failed.map(gname).join(", "))}</span>`) + pills(r), "l"]]]];
+const SCOLS = SGROUPS.flatMap(([, cols], gi) => cols.map((c, i) => i === 0 && gi ? [c[0], c[1], c[2], ((c[3] || "") + " gs").trim()] : c));
+const SHEAD = `<tr class="grp">${SGROUPS.map(([g, cols], gi) => `<th colspan="${cols.length}" class="l${gi ? " gs" : ""}">${esc(g)}</th>`).join("")}</tr>`;
 function viewScreen() {
   let S = Object.assign({}, SDEF, store.get("screen", {}));
   const secs = [...new Set(D.rows.map(r => r.sec).filter(Boolean))].sort();
@@ -463,8 +467,8 @@ function viewScreen() {
       if (x == null && y == null) return 0; if (x == null || x === "") return 1; if (y == null || y === "") return -1;
       return (typeof x === "string" ? x.localeCompare(y) : x - y) * S.dir; });
     $("#cnt").textContent = `${rows.length} shown`;
-    $("thead", view).innerHTML = "<tr>" + SCOLS.map(([k, l, , c]) => `<th class="sort ${c || ""}" data-k="${k}" ${S.sort === k ? `aria-sort="${S.dir > 0 ? "ascending" : "descending"}"` : ""}>${l}</th>`).join("") + "</tr>";
-    $$("th", view).forEach(th => th.onclick = () => { const k = th.dataset.k; S.dir = S.sort === k ? -S.dir : (["t", "n", "sec", "rank"].includes(k) ? 1 : -1); S.sort = k; draw(); });
+    $("thead", view).innerHTML = SHEAD + "<tr>" + SCOLS.map(([k, l, , c]) => `<th class="sort ${c || ""}" data-k="${k}" ${S.sort === k ? `aria-sort="${S.dir > 0 ? "ascending" : "descending"}"` : ""}>${l}</th>`).join("") + "</tr>";
+    $$("th[data-k]", view).forEach(th => th.onclick = () => { const k = th.dataset.k; S.dir = S.sort === k ? -S.dir : (["t", "n", "sec", "rank"].includes(k) ? 1 : -1); S.sort = k; draw(); });
     $("tbody", view).innerHTML = rows.slice(0, 600).map(r => `<tr class="click" data-t="${esc(r.t)}">` + SCOLS.map(([, , f, c]) => `<td class="${c || ""}">${f(r)}</td>`).join("") + "</tr>").join("")
       + (rows.length > 600 ? `<tr><td colspan="${SCOLS.length}" class="l mut">Showing the first 600. Narrow the filters to see the rest.</td></tr>` : "");
     $$("tbody tr[data-t]", view).forEach(tr => tr.onclick = e => { if (!e.target.closest("a")) go(tr.dataset.t); }); };
